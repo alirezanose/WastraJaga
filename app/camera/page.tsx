@@ -95,7 +95,7 @@ export default function CameraPage() {
           err.name === "PermissionDeniedError"
         ) {
           setErrorMessage(
-            "Akses kamera ditolak. Silakan berikan izin akses kamera di pengaturan browser Anda."
+            "Akses kamera ditolak. Berikan izin kamera di pengaturan browser Anda."
           );
           return;
         }
@@ -104,7 +104,7 @@ export default function CameraPage() {
           err.name === "DevicesNotFoundError"
         ) {
           setErrorMessage(
-            "Perangkat kamera tidak ditemukan. Pastikan webcam/kamera terhubung."
+            "Perangkat kamera tidak ditemukan. Pastikan webcam terhubung."
           );
           return;
         }
@@ -113,7 +113,7 @@ export default function CameraPage() {
           err.name === "TrackStartError"
         ) {
           setErrorMessage(
-            "Kamera sedang digunakan oleh aplikasi lain atau tidak dapat dibaca."
+            "Kamera sedang digunakan aplikasi lain atau tidak dapat diakses."
           );
           return;
         }
@@ -127,7 +127,7 @@ export default function CameraPage() {
     }
   }, [stopStream]);
 
-  // Menggambar overlay bounding box abu-abu dan label status
+  // Menggambar overlay bounding box abu-abu minimalis dan label status (The White Album style)
   const drawOverlay = (
     ctx: CanvasRenderingContext2D,
     trackedPersons: TrackedPerson[],
@@ -139,10 +139,10 @@ export default function CameraPage() {
     for (const person of trackedPersons) {
       const { originX, originY, width, height } = person.box;
 
-      // Kotak ABU sesuai status "pending" di AGENTS.md
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "#94a3b8"; // Slate-400 (Abu)
-      ctx.fillStyle = "rgba(148, 163, 184, 0.15)";
+      // Kotak ABU netral presisi sesuai status "pending" di AGENTS.md
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#71717a"; // Zinc-500
+      ctx.fillStyle = "rgba(244, 244, 245, 0.15)"; // Zinc-100 halus
 
       // Gambar kotak
       ctx.beginPath();
@@ -150,26 +150,26 @@ export default function CameraPage() {
       ctx.stroke();
       ctx.fill();
 
-      // Gambar label badge di atas kotak
+      // Gambar label badge di atas kotak - gaya monokrom bersih
       const labelText = `#${person.id} menganalisis...`;
-      ctx.font = "bold 13px sans-serif";
+      ctx.font = "500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
       const textMetrics = ctx.measureText(labelText);
       const paddingX = 8;
       const badgeHeight = 22;
       const badgeWidth = textMetrics.width + paddingX * 2;
-      const badgeY = Math.max(0, originY - badgeHeight - 2);
+      const badgeY = Math.max(0, originY - badgeHeight - 4);
 
-      // Background badge abu-abu
-      ctx.fillStyle = "rgba(51, 65, 85, 0.9)"; // Slate-700
+      // Background badge putih bersih
+      ctx.fillStyle = "#ffffff";
       ctx.fillRect(originX, badgeY, badgeWidth, badgeHeight);
 
-      // Border badge
-      ctx.strokeStyle = "#94a3b8";
+      // Border halus badge
+      ctx.strokeStyle = "#18181b"; // Zinc-900 border tegas
       ctx.lineWidth = 1;
       ctx.strokeRect(originX, badgeY, badgeWidth, badgeHeight);
 
-      // Teks label
-      ctx.fillStyle = "#f8fafc";
+      // Teks label hitam arang
+      ctx.fillStyle = "#09090b";
       ctx.fillText(labelText, originX + paddingX, badgeY + 15);
     }
   };
@@ -193,7 +193,6 @@ export default function CameraPage() {
         video.videoWidth > 0 &&
         video.videoHeight > 0
       ) {
-        // Sinkronisasi ukuran canvas dengan video
         if (
           canvas.width !== video.videoWidth ||
           canvas.height !== video.videoHeight
@@ -205,10 +204,8 @@ export default function CameraPage() {
         const ctx = canvas.getContext("2d");
         if (ctx) {
           try {
-            // Jalankan deteksi MediaPipe pada video frame
             const detectionResult = detector.detectForVideo(video, timestamp);
 
-            // Filter hanya kategori "person"
             const personBoxes = (detectionResult.detections || [])
               .filter((det: Detection) =>
                 det.categories.some(
@@ -227,19 +224,15 @@ export default function CameraPage() {
                 };
               });
 
-            // Update tracker IoU & Centroid
             const activeTracks = trackerRef.current.update(personBoxes);
-
-            // Gambar overlay
             drawOverlay(ctx, activeTracks, canvas.width, canvas.height);
             setPersonCount(activeTracks.length);
           } catch (detError) {
-            console.error("Gagal menjalankan deteksi frame:", detError);
+            console.error("Gagal deteksi frame:", detError);
           }
         }
       }
 
-      // Hitung FPS
       frameCountRef.current++;
       if (timestamp - fpsTimerRef.current >= 1000) {
         const currentFps = Math.round(
@@ -277,91 +270,90 @@ export default function CameraPage() {
   }, [startCamera, stopStream]);
 
   return (
-    <div className="relative min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center">
-      {/* Top Navigation Bar */}
-      <header className="w-full max-w-6xl flex items-center justify-between p-4 border-b border-slate-800 z-20">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-white text-zinc-900 flex flex-col items-center selection:bg-zinc-200">
+      {/* Top Bar - The White Album clean minimalist header */}
+      <header className="w-full max-w-6xl flex items-center justify-between p-4 sm:p-6 border-b border-zinc-200">
+        <div className="flex items-center gap-4">
           <Link
             href="/"
-            className="text-slate-400 hover:text-white transition-colors text-sm font-medium"
+            className="text-xs uppercase tracking-widest font-mono text-zinc-600 hover:text-zinc-950 transition-colors"
           >
             &larr; Beranda
           </Link>
-          <span className="text-slate-600">|</span>
-          <h1 className="text-base font-semibold text-slate-200">
-            Kamera Deteksi Masuk Pura
+          <span className="text-zinc-300">/</span>
+          <h1 className="text-sm font-medium tracking-tight text-zinc-950">
+            Kamera Masuk Pura
           </h1>
         </div>
 
-        {/* Status Indicator */}
-        <div className="flex items-center gap-4 text-xs font-mono">
-          <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-full">
+        {/* Telemetry Chips */}
+        <div className="flex items-center gap-3 text-xs font-mono">
+          <div className="flex items-center gap-2 border border-zinc-200 px-3 py-1 bg-zinc-50">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${
+              className={`h-2 w-2 rounded-full ${
                 errorMessage
                   ? "bg-rose-500"
                   : isLoading
                   ? "bg-amber-400 animate-pulse"
-                  : "bg-emerald-500"
+                  : "bg-zinc-900"
               }`}
             />
-            <span className="text-slate-300">
+            <span className="text-zinc-700">
               {errorMessage
                 ? "Error"
                 : isLoading
                 ? loadingStep
-                : "Deteksi Aktif"}
+                : "Aktif"}
             </span>
           </div>
 
-          <div className="bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-full text-slate-300">
-            FPS: <span className="text-emerald-400 font-bold">{fps}</span>
+          <div className="border border-zinc-200 px-3 py-1 bg-zinc-50 text-zinc-700">
+            FPS: <span className="text-zinc-950 font-semibold">{fps}</span>
           </div>
 
-          <div className="bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-full text-slate-300">
-            Orang:{" "}
-            <span className="text-emerald-400 font-bold">{personCount}</span>
+          <div className="border border-zinc-200 px-3 py-1 bg-zinc-50 text-zinc-700">
+            Orang: <span className="text-zinc-950 font-semibold">{personCount}</span>
           </div>
         </div>
       </header>
 
-      {/* Main Viewport */}
-      <main className="relative flex-1 w-full max-w-6xl flex items-center justify-center p-4">
-        <div className="relative w-full aspect-video max-h-[78vh] bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex items-center justify-center">
+      {/* Viewport Frame */}
+      <main className="relative flex-1 w-full max-w-6xl flex items-center justify-center p-4 sm:p-6">
+        <div className="relative w-full aspect-video max-h-[78vh] bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center shadow-sm">
           {/* Loading Indicator */}
           {isLoading && (
-            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm p-6 text-center">
-              <div className="h-12 w-12 border-4 border-slate-700 border-t-emerald-500 rounded-full animate-spin mb-4" />
-              <p className="text-sm font-medium text-slate-200">
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/90 backdrop-blur-sm p-6 text-center">
+              <div className="h-8 w-8 border-2 border-zinc-300 border-t-zinc-900 rounded-full animate-spin mb-4" />
+              <p className="text-xs font-mono uppercase tracking-widest text-zinc-800">
                 {loadingStep}
               </p>
-              <p className="text-xs text-slate-400 mt-1">
-                Memuat modul WASM dan model MediaPipe lokal...
+              <p className="text-xs text-zinc-600 mt-1 font-light">
+                Memuat modul WASM dan model MediaPipe on-device...
               </p>
             </div>
           )}
 
           {/* Error Banner */}
           {errorMessage && (
-            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 p-6 text-center max-w-lg mx-auto">
-              <div className="h-14 w-14 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 text-2xl font-bold mb-4">
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-white p-6 text-center max-w-md mx-auto">
+              <div className="h-10 w-10 border border-rose-500 flex items-center justify-center text-rose-600 font-mono text-sm mb-3">
                 !
               </div>
-              <h2 className="text-lg font-semibold text-rose-300 mb-2">
-                Kendala Akses Kamera / Model
+              <h2 className="text-sm font-semibold tracking-tight text-zinc-900 mb-1">
+                Kamera Tidak Tersedia
               </h2>
-              <p className="text-sm text-slate-300 mb-6">{errorMessage}</p>
+              <p className="text-xs text-zinc-600 mb-6 font-light">{errorMessage}</p>
               <button
                 type="button"
                 onClick={startCamera}
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-medium text-sm transition-colors shadow-lg"
+                className="px-5 py-2 border border-zinc-900 bg-zinc-950 hover:bg-white hover:text-zinc-950 text-white text-xs font-mono uppercase tracking-wider transition-colors"
               >
                 Coba Lagi
               </button>
             </div>
           )}
 
-          {/* Video Stream Element */}
+          {/* Video Stream */}
           <video
             ref={videoRef}
             playsInline
@@ -369,17 +361,17 @@ export default function CameraPage() {
             className="w-full h-full object-contain"
           />
 
-          {/* Canvas Detection Overlay */}
+          {/* Canvas Overlay */}
           <canvas
             ref={canvasRef}
             className="absolute inset-0 w-full h-full object-contain pointer-events-none"
           />
 
-          {/* Overlay Info Corner */}
+          {/* Status Label Corner */}
           {!isLoading && !errorMessage && (
             <div className="absolute bottom-4 left-4 z-20 flex gap-2">
-              <div className="bg-slate-950/80 backdrop-blur border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-300">
-                Status: <span className="text-slate-400">pending (abu)</span>
+              <div className="border border-zinc-200 bg-white/95 px-3 py-1 text-xs font-mono text-zinc-700 shadow-sm">
+                Status: <span className="text-zinc-900 font-medium">pending (abu)</span>
               </div>
             </div>
           )}
