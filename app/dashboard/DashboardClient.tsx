@@ -209,6 +209,16 @@ export default function DashboardClient({ user }: DashboardClientProps) {
               Kamera &rarr;
             </Link>
 
+            {/* Tombol Admin Panel (hanya untuk Admin) */}
+            {user.role === "admin" && (
+              <Link
+                href="/admin"
+                className="border border-zinc-950 bg-zinc-950 px-3 py-1 text-xs font-mono uppercase tracking-wider text-white hover:bg-white hover:text-zinc-950 transition-colors"
+              >
+                Admin &rarr;
+              </Link>
+            )}
+
             {/* Logout */}
             <button
               onClick={() => signOut({ callbackUrl: "/login" })}
