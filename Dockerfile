@@ -6,7 +6,8 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+COPY scripts/ ./scripts/
+RUN npm config set fetch-retries 5 && npm ci
 
 # Tahap build Next.js
 FROM base AS builder
