@@ -99,8 +99,8 @@ export default function CameraPage() {
             "x-camera-token": process.env.NEXT_PUBLIC_CAMERA_API_TOKEN ?? "",
           },
           body: JSON.stringify({
-            temple_id: "default",
-            camera_id: "camera-entrance-1",
+            temple_id: "temple-besakih-01",
+            camera_id: "camera-candi-bentar-01",
             track_id: trackId,
             image: imageBase64,
           }),
@@ -396,6 +396,13 @@ export default function CameraPage() {
           <div className="border border-zinc-200 px-3 py-1 bg-zinc-50 text-zinc-700">
             Orang: <span className="text-zinc-950 font-semibold">{personCount}</span>
           </div>
+
+          <Link
+            href="/dashboard"
+            className="border border-zinc-900 bg-zinc-950 px-3 py-1 text-xs font-mono uppercase text-white hover:bg-white hover:text-zinc-950 transition-colors"
+          >
+            Dashboard &rarr;
+          </Link>
         </div>
       </header>
 
