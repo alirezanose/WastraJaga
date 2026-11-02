@@ -4,7 +4,36 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { getObjectDetector, type Detection } from "@/lib/detector";
 import { ObjectTracker, type TrackedPerson } from "@/lib/tracker";
+import { cropAndBlurHead } from "@/lib/crop";
 import type { ObjectDetector } from "@mediapipe/tasks-vision";
+
+// Status busana yang mungkin (sesuai AGENTS.md)
+type PersonStatus = "pending" | "ok" | "violation" | "uncertain" | "error";
+
+interface TrackStatus {
+  status: PersonStatus;
+  reasons: string[];
+}
+
+// Warna overlay kotak sesuai status
+const STATUS_COLORS: Record<PersonStatus, { stroke: string; fill: string; badge: string; text: string }> = {
+  pending:   { stroke: "#71717a", fill: "rgba(244,244,245,0.15)", badge: "#ffffff", text: "#09090b" },
+  ok:        { stroke: "#16a34a", fill: "rgba(220,252,231,0.20)", badge: "#16a34a", text: "#ffffff" },
+  violation: { stroke: "#dc2626", fill: "rgba(254,226,226,0.20)", badge: "#dc2626", text: "#ffffff" },
+  uncertain: { stroke: "#ca8a04", fill: "rgba(254,249,195,0.20)", badge: "#ca8a04", text: "#ffffff" },
+  error:     { stroke: "#71717a", fill: "rgba(244,244,245,0.10)", badge: "#ffffff", text: "#71717a" },
+};
+
+const STATUS_ICON: Record<PersonStatus, string> = {
+  pending:   "○",
+  ok:        "✓",
+  violation: "✗",
+  uncertain: "?",
+  error:     "–",
+};
+
+// Jumlah frame stabil sebelum dikirim ke /api/scan
+const STABLE_FRAMES_REQUIRED = 3;
 
 export default function CameraPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -25,13 +54,21 @@ export default function CameraPage() {
   const frameCountRef = useRef<number>(0);
   const fpsTimerRef = useRef<number>(0);
 
+  // Track IDs yang sudah dikirim ke /api/scan (sekali per ID)
+  const scannedTracksRef = useRef<Set<number>>(new Set());
+  // Hitungan frame stabil per track ID
+  const stableFrameCountRef = useRef<Map<number, number>>(new Map());
+  // Status terkini per track ID
+  const trackStatusRef = useRef<Map<number, TrackStatus>>(new Map());
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadingStep, setLoadingStep] = useState<string>("Menyiapkan...");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fps, setFps] = useState<number>(0);
   const [personCount, setPersonCount] = useState<number>(0);
+  // Trigger re-render saat status track berubah
+  const [, setStatusVersion] = useState<number>(0);
 
-  // Stop video stream
   const stopStream = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -43,12 +80,68 @@ export default function CameraPage() {
     }
   }, []);
 
+  // Kirim crop ke /api/scan dan simpan hasilnya
+  const scanPerson = useCallback(
+    async (trackId: number, box: TrackedPerson["box"]) => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      // Buat crop + blur kepala di browser (privasi)
+      const imageBase64 = cropAndBlurHead(video, box);
+      if (!imageBase64) return;
+
+      try {
+        const res = await fetch("/api/scan", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            // Token kamera dibaca dari env client (public runtime config)
+            "x-camera-token": process.env.NEXT_PUBLIC_CAMERA_API_TOKEN ?? "",
+          },
+          body: JSON.stringify({
+            temple_id: "default",
+            camera_id: "camera-entrance-1",
+            track_id: trackId,
+            image: imageBase64,
+          }),
+        });
+
+        if (!res.ok) {
+          console.warn(`[scan] HTTP ${res.status} untuk track #${trackId}`);
+          trackStatusRef.current.set(trackId, { status: "error", reasons: [`HTTP ${res.status}`] });
+        } else {
+          const data = await res.json() as {
+            status: PersonStatus;
+            reasons: string[];
+            confidence: number;
+            latency_ms: number;
+          };
+          console.log(`[scan] track #${trackId} → ${data.status} (${data.latency_ms}ms)`);
+          trackStatusRef.current.set(trackId, {
+            status: data.status,
+            reasons: data.reasons,
+          });
+        }
+      } catch (err) {
+        console.error(`[scan] Gagal kirim track #${trackId}:`, err);
+        trackStatusRef.current.set(trackId, { status: "error", reasons: ["Koneksi gagal"] });
+      }
+
+      // Trigger re-render agar warna overlay terupdate
+      setStatusVersion((v) => v + 1);
+    },
+    []
+  );
+
   // Inisialisasi model dan kamera
   const startCamera = useCallback(async () => {
     stopStream();
     setIsLoading(true);
     setErrorMessage(null);
     trackerRef.current.reset();
+    scannedTracksRef.current.clear();
+    stableFrameCountRef.current.clear();
+    trackStatusRef.current.clear();
 
     try {
       setLoadingStep("Memuat model MediaPipe...");
@@ -57,17 +150,11 @@ export default function CameraPage() {
 
       setLoadingStep("Meminta izin akses kamera...");
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error(
-          "Browser Anda tidak mendukung akses kamera (getUserMedia)."
-        );
+        throw new Error("Browser Anda tidak mendukung akses kamera (getUserMedia).");
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: "user",
-        },
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
         audio: false,
       });
 
@@ -90,89 +177,78 @@ export default function CameraPage() {
       setIsLoading(false);
 
       if (err instanceof DOMException) {
-        if (
-          err.name === "NotAllowedError" ||
-          err.name === "PermissionDeniedError"
-        ) {
-          setErrorMessage(
-            "Akses kamera ditolak. Berikan izin kamera di pengaturan browser Anda."
-          );
+        if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+          setErrorMessage("Akses kamera ditolak. Berikan izin kamera di pengaturan browser Anda.");
           return;
         }
-        if (
-          err.name === "NotFoundError" ||
-          err.name === "DevicesNotFoundError"
-        ) {
-          setErrorMessage(
-            "Perangkat kamera tidak ditemukan. Pastikan webcam terhubung."
-          );
+        if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+          setErrorMessage("Perangkat kamera tidak ditemukan. Pastikan webcam terhubung.");
           return;
         }
-        if (
-          err.name === "NotReadableError" ||
-          err.name === "TrackStartError"
-        ) {
-          setErrorMessage(
-            "Kamera sedang digunakan aplikasi lain atau tidak dapat diakses."
-          );
+        if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+          setErrorMessage("Kamera sedang digunakan aplikasi lain atau tidak dapat diakses.");
           return;
         }
       }
 
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Gagal memuat kamera atau model deteksi.";
+      const msg = err instanceof Error ? err.message : "Gagal memuat kamera atau model deteksi.";
       setErrorMessage(msg);
     }
   }, [stopStream]);
 
-  // Menggambar overlay bounding box abu-abu minimalis dan label status (The White Album style)
-  const drawOverlay = (
-    ctx: CanvasRenderingContext2D,
-    trackedPersons: TrackedPerson[],
-    canvasWidth: number,
-    canvasHeight: number
-  ) => {
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+  // Gambar overlay bounding box berwarna sesuai status person
+  const drawOverlay = useCallback(
+    (
+      ctx: CanvasRenderingContext2D,
+      trackedPersons: TrackedPerson[],
+      canvasWidth: number,
+      canvasHeight: number
+    ) => {
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    for (const person of trackedPersons) {
-      const { originX, originY, width, height } = person.box;
+      for (const person of trackedPersons) {
+        const { originX, originY, width, height } = person.box;
+        const trackInfo = trackStatusRef.current.get(person.id);
+        const status: PersonStatus = trackInfo?.status ?? "pending";
+        const colors = STATUS_COLORS[status];
+        const icon = STATUS_ICON[status];
 
-      // Kotak ABU netral presisi sesuai status "pending" di AGENTS.md
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#71717a"; // Zinc-500
-      ctx.fillStyle = "rgba(244, 244, 245, 0.15)"; // Zinc-100 halus
+        // Kotak berwarna sesuai status
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = colors.stroke;
+        ctx.fillStyle = colors.fill;
+        ctx.beginPath();
+        ctx.rect(originX, originY, width, height);
+        ctx.stroke();
+        ctx.fill();
 
-      // Gambar kotak
-      ctx.beginPath();
-      ctx.rect(originX, originY, width, height);
-      ctx.stroke();
-      ctx.fill();
+        // Badge label di atas kotak
+        const label = status === "pending"
+          ? `#${person.id} menganalisis...`
+          : `#${person.id} ${icon}`;
+        ctx.font = "500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+        const textW = ctx.measureText(label).width;
+        const padX = 8;
+        const badgeH = 22;
+        const badgeW = textW + padX * 2;
+        const badgeY = Math.max(0, originY - badgeH - 4);
 
-      // Gambar label badge di atas kotak - gaya monokrom bersih
-      const labelText = `#${person.id} menganalisis...`;
-      ctx.font = "500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      const textMetrics = ctx.measureText(labelText);
-      const paddingX = 8;
-      const badgeHeight = 22;
-      const badgeWidth = textMetrics.width + paddingX * 2;
-      const badgeY = Math.max(0, originY - badgeHeight - 4);
+        // Background badge
+        ctx.fillStyle = colors.badge;
+        ctx.fillRect(originX, badgeY, badgeW, badgeH);
 
-      // Background badge putih bersih
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(originX, badgeY, badgeWidth, badgeHeight);
+        // Border badge
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(originX, badgeY, badgeW, badgeH);
 
-      // Border halus badge
-      ctx.strokeStyle = "#18181b"; // Zinc-900 border tegas
-      ctx.lineWidth = 1;
-      ctx.strokeRect(originX, badgeY, badgeWidth, badgeHeight);
-
-      // Teks label hitam arang
-      ctx.fillStyle = "#09090b";
-      ctx.fillText(labelText, originX + paddingX, badgeY + 15);
-    }
-  };
+        // Teks badge
+        ctx.fillStyle = colors.text;
+        ctx.fillText(label, originX + padX, badgeY + 15);
+      }
+    },
+    []
+  );
 
   // Detection loop
   useEffect(() => {
@@ -193,10 +269,7 @@ export default function CameraPage() {
         video.videoWidth > 0 &&
         video.videoHeight > 0
       ) {
-        if (
-          canvas.width !== video.videoWidth ||
-          canvas.height !== video.videoHeight
-        ) {
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
         }
@@ -209,9 +282,7 @@ export default function CameraPage() {
             const personBoxes = (detectionResult.detections || [])
               .filter((det: Detection) =>
                 det.categories.some(
-                  (cat) =>
-                    cat.categoryName.toLowerCase() === "person" &&
-                    (cat.score ?? 0) >= 0.5
+                  (cat) => cat.categoryName.toLowerCase() === "person" && (cat.score ?? 0) >= 0.5
                 )
               )
               .map((det: Detection) => {
@@ -225,6 +296,23 @@ export default function CameraPage() {
               });
 
             const activeTracks = trackerRef.current.update(personBoxes);
+
+            // Cek track ID baru → hitung frame stabil → scan jika cukup stabil
+            for (const person of activeTracks) {
+              const id = person.id;
+              if (scannedTracksRef.current.has(id)) continue;
+
+              const count = (stableFrameCountRef.current.get(id) ?? 0) + 1;
+              stableFrameCountRef.current.set(id, count);
+
+              if (count >= STABLE_FRAMES_REQUIRED) {
+                // Tandai sudah di-scan agar tidak scan ulang
+                scannedTracksRef.current.add(id);
+                // Kirim crop ke /api/scan (non-blocking)
+                void scanPerson(id, person.box);
+              }
+            }
+
             drawOverlay(ctx, activeTracks, canvas.width, canvas.height);
             setPersonCount(activeTracks.length);
           } catch (detError) {
@@ -259,26 +347,24 @@ export default function CameraPage() {
         cancelAnimationFrame(animFrameIdRef.current);
       }
     };
-  }, [isLoading, errorMessage]);
+  }, [isLoading, errorMessage, scanPerson, drawOverlay]);
 
   // Mount effect
   useEffect(() => {
     startCamera();
-    return () => {
-      stopStream();
-    };
+    return () => { stopStream(); };
   }, [startCamera, stopStream]);
 
   return (
     <div className="min-h-screen bg-white text-zinc-900 flex flex-col items-center selection:bg-zinc-200">
-      {/* Top Bar - The White Album clean minimalist header */}
+      {/* Top Bar */}
       <header className="w-full max-w-6xl flex items-center justify-between p-4 sm:p-6 border-b border-zinc-200">
         <div className="flex items-center gap-4">
           <Link
             href="/"
             className="text-xs uppercase tracking-widest font-mono text-zinc-600 hover:text-zinc-950 transition-colors"
           >
-            &larr; Beranda
+            ← Beranda
           </Link>
           <span className="text-zinc-300">/</span>
           <h1 className="text-sm font-medium tracking-tight text-zinc-950">
@@ -299,11 +385,7 @@ export default function CameraPage() {
               }`}
             />
             <span className="text-zinc-700">
-              {errorMessage
-                ? "Error"
-                : isLoading
-                ? loadingStep
-                : "Aktif"}
+              {errorMessage ? "Error" : isLoading ? loadingStep : "Aktif"}
             </span>
           </div>
 
@@ -354,12 +436,7 @@ export default function CameraPage() {
           )}
 
           {/* Video Stream */}
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            className="w-full h-full object-contain"
-          />
+          <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
 
           {/* Canvas Overlay */}
           <canvas
@@ -367,12 +444,21 @@ export default function CameraPage() {
             className="absolute inset-0 w-full h-full object-contain pointer-events-none"
           />
 
-          {/* Status Label Corner */}
+          {/* Legenda Status (kiri bawah) */}
           {!isLoading && !errorMessage && (
-            <div className="absolute bottom-4 left-4 z-20 flex gap-2">
-              <div className="border border-zinc-200 bg-white/95 px-3 py-1 text-xs font-mono text-zinc-700 shadow-sm">
-                Status: <span className="text-zinc-900 font-medium">pending (abu)</span>
-              </div>
+            <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-1">
+              {(["pending","ok","violation","uncertain"] as PersonStatus[]).map((s) => (
+                <div key={s} className="flex items-center gap-1.5 text-xs font-mono">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-sm border"
+                    style={{
+                      backgroundColor: STATUS_COLORS[s].fill.replace("0.20","0.8").replace("0.15","0.8"),
+                      borderColor: STATUS_COLORS[s].stroke,
+                    }}
+                  />
+                  <span className="text-zinc-600">{s}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
