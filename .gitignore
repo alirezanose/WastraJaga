@@ -1,0 +1,41 @@
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Production build artifacts
+build/
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# MediaPipe runtime assets (binaries copied at postinstall/build)
+# Note: public/models/*.tflite can be tracked or excluded if large, but per instructions
+# public/mediapipe/ wasm are copied from node_modules. We can ignore generated wasm in public/mediapipe/
+public/mediapipe/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+*.pem
+
+# Typescript cache
+*.tsbuildinfo
+next-env.d.ts
