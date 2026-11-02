@@ -31,6 +31,12 @@ export default function Home() {
           >
             Buka Kamera Deteksi &rarr;
           </Link>
+          <Link
+            href="/login"
+            className="inline-flex items-center justify-center rounded-none border border-zinc-300 bg-white px-6 py-3.5 text-sm font-medium tracking-wide text-zinc-900 hover:border-zinc-950 transition-colors duration-200"
+          >
+            Masuk Petugas &rarr;
+          </Link>
           <span className="text-xs text-zinc-600 font-mono">
             Mode On-Device &bull; Standalone
           </span>
