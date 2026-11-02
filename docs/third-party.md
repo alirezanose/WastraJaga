@@ -11,6 +11,8 @@ Dokumen ini mencatat seluruh pustaka perangkat lunak (libraries), model kecerdas
 | **@mediapipe/tasks-vision** | `^0.10.22` | Apache-2.0 | [Google MediaPipe](https://developers.google.com/mediapipe) | Deteksi objek real-time langsung di browser client (pintu masuk pura) tanpa mengirimkan video mentah ke server. |
 | **EfficientDet-Lite0 (.tflite)** | Float32 v1 | Apache-2.0 | [MediaPipe Models](https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite) | Model inferensi on-device untuk mendeteksi kategori `person` secara cepat dan akurat. |
 | **MediaPipe WASM Binaries** | `0.10.x` | Apache-2.0 | `@mediapipe/tasks-vision/wasm` | Modul WebAssembly yang disalin otomatis ke `public/mediapipe/` via script `postinstall` agar berjalan tanpa dependensi CDN runtime. |
+| **@google/generative-ai** | `^0.24.1` | Apache-2.0 | [Google Generative AI](https://github.com/google-gemini/generative-ai-js) | SDK resmi Google Gemini Vision API untuk menganalisis atribut pakaian adat Bali pada crop gambar ter-blur. |
+| **Zod** | `^3.24.1` / `^4.x` | MIT | [Zod](https://zod.dev/) | Validasi skema runtime TypeScript untuk memverifikasi payload input API /api/scan dan output JSON dari Vision LLM. |
 
 ---
 
@@ -24,6 +26,19 @@ Dokumen ini mencatat seluruh pustaka perangkat lunak (libraries), model kecerdas
 | **Tailwind CSS** | `^3.4.16` | MIT | [Tailwind CSS](https://tailwindcss.com/) | Styling antarmuka web modern dengan performa tinggi dan konsisten. |
 | **PostCSS** | `^8.4.49` | MIT | [PostCSS](https://postcss.org/) | Preprocessor styling CSS. |
 | **Autoprefixer** | `^10.4.20` | MIT | [Autoprefixer](https://github.com/postcss/autoprefixer) | Penambahan vendor-prefix CSS secara otomatis untuk kompatibilitas peramban. |
+| **NextAuth.js (Auth.js v5)** | `^5.0.0-beta.32` | ISC | [Auth.js](https://authjs.dev/) | Sistem autentikasi berbasis sesi kredensial untuk memproteksi antarmuka pecalang dan admin. |
+| **@auth/drizzle-adapter** | `^1.11.3` | ISC | [Auth.js Drizzle](https://authjs.dev/getting-started/adapters/drizzle) | Adapter relasional Drizzle untuk Auth.js. |
+| **Argon2** | `^0.45.1` | MIT | [Argon2 Node](https://github.com/ranisalt/node-argon2) | Algoritma hashing password kuat (PHC winner) untuk menyimpan kredensial petugas dan admin secara aman. |
+
+---
+
+## 3. Database & ORM
+
+| Pustaka | Versi | Lisensi | Sumber Resmi | Kegunaan dalam Proyek |
+| :--- | :--- | :--- | :--- | :--- |
+| **Drizzle ORM** | `^0.45.4` | Apache-2.0 | [Drizzle ORM](https://orm.drizzle.team/) | Type-safe ORM TypeScript untuk PostgreSQL dengan performa tinggi dan nol overhead abstraksi. |
+| **Drizzle Kit** | `^0.31.11` | Apache-2.0 | [Drizzle Kit](https://orm.drizzle.team/kit-docs/overview) | CLI generator migrasi skema dan sinkronisasi database. |
+| **Postgres.js** | `^4.0.0` | PostgreSQL License | [Postgres.js](https://github.com/porsager/postgres) | Driver PostgreSQL native berkecepatan tinggi untuk Node.js/TypeScript. |
 
 ---
 
