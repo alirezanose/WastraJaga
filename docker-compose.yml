@@ -24,6 +24,15 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres_password_dev@db:5432/wastrajaga}
+      AUTH_SECRET: ${AUTH_SECRET:-wastrajaga_secret_key_super_secure_32char}
+      AUTH_TRUST_HOST: "true"
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CAMERA_API_TOKEN: ${CAMERA_API_TOKEN:-dev-camera-token-12345}
+      NEXT_PUBLIC_CAMERA_API_TOKEN: ${NEXT_PUBLIC_CAMERA_API_TOKEN:-dev-camera-token-12345}
       PORT: 3000
       HOSTNAME: "0.0.0.0"
     depends_on:
