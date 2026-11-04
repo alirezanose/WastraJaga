@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="2048" height="2048" fill="none">
+  <defs>
+    <linearGradient id="scanGlowLight" x1="512" y1="140" x2="512" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.0"/>
+      <stop offset="50%" stop-color="#10B981" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#10B981" stop-opacity="0.0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Architectural Double Border (Transparent Inside) -->
+  <rect x="64" y="64" width="896" height="896" stroke="#09090B" stroke-width="16"/>
+  <rect x="92" y="92" width="840" height="840" stroke="#09090B" stroke-opacity="0.25" stroke-width="4"/>
+
+  <!-- Vision AI Viewfinder Corner Brackets -->
+  <path d="M148 228V156H220" stroke="#059669" stroke-width="14" stroke-linecap="square"/>
+  <path d="M876 228V156H804" stroke="#059669" stroke-width="14" stroke-linecap="square"/>
+  <path d="M148 796V868H220" stroke="#059669" stroke-width="14" stroke-linecap="square"/>
+  <path d="M876 796V868H804" stroke="#059669" stroke-width="14" stroke-linecap="square"/>
+
+  <!-- Center AI Vision Vertical Scan Field -->
+  <rect x="440" y="170" width="144" height="630" fill="url(#scanGlowLight)"/>
+  <line x1="512" y1="156" x2="512" y2="868" stroke="#059669" stroke-opacity="0.35" stroke-width="4" stroke-dasharray="12 12"/>
+
+  <!-- LEFT WING: Candi Bentar (Balinese Split Gate) -->
+  <g fill="#09090B">
+    <rect x="180" y="760" width="260" height="44"/>
+    <rect x="204" y="724" width="236" height="26"/>
+    <path d="M224 714V604H260V504H296V408H332V318H368V238H400V184H444V714H224Z"/>
+    <rect x="204" y="586" width="32" height="18"/>
+    <rect x="240" y="486" width="32" height="18"/>
+    <rect x="276" y="390" width="32" height="18"/>
+    <rect x="312" y="300" width="32" height="18"/>
+    <rect x="348" y="220" width="32" height="18"/>
+    <rect x="384" y="166" width="28" height="18"/>
+  </g>
+  <path d="M418 216V714" stroke="#FFFFFF" stroke-width="10"/>
+
+  <!-- RIGHT WING: Candi Bentar (Balinese Split Gate) -->
+  <g fill="#09090B">
+    <rect x="584" y="760" width="260" height="44"/>
+    <rect x="584" y="724" width="236" height="26"/>
+    <path d="M800 714V604H764V504H728V408H692V318H656V238H624V184H580V714H800Z"/>
+    <rect x="788" y="586" width="32" height="18"/>
+    <rect x="752" y="486" width="32" height="18"/>
+    <rect x="716" y="390" width="32" height="18"/>
+    <rect x="680" y="300" width="32" height="18"/>
+    <rect x="644" y="220" width="32" height="18"/>
+    <rect x="612" y="166" width="28" height="18"/>
+  </g>
+  <path d="M606 216V714" stroke="#FFFFFF" stroke-width="10"/>
+
+  <!-- Center Vision AI Laser Scan Bar & Node -->
+  <line x1="396" y1="464" x2="628" y2="464" stroke="#059669" stroke-width="12"/>
+  <circle cx="512" cy="464" r="20" fill="#FFFFFF" stroke="#059669" stroke-width="10"/>
+  <circle cx="512" cy="464" r="7" fill="#059669"/>
+</svg>

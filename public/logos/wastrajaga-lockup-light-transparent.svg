@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 900" width="2400" height="900" fill="none">
+  <defs>
+    <linearGradient id="scanGlowHoriz" x1="450" y1="160" x2="450" y2="740" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.0"/>
+      <stop offset="50%" stop-color="#10B981" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#10B981" stop-opacity="0.0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- LEFT EMBLEM BOX (700x700 centered at y=100..800) -->
+  <g transform="translate(80, 90)">
+    <rect x="0" y="0" width="720" height="720" rx="88" fill="#09090B"/>
+    <rect x="28" y="28" width="664" height="664" rx="64" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="3"/>
+
+    <!-- Vision AI Corner Brackets -->
+    <path d="M88 156V104H140" stroke="#10B981" stroke-width="8" stroke-linecap="square"/>
+    <path d="M632 156V104H580" stroke="#10B981" stroke-width="8" stroke-linecap="square"/>
+    <path d="M88 564V616H140" stroke="#10B981" stroke-width="8" stroke-linecap="square"/>
+    <path d="M632 564V616H580" stroke="#10B981" stroke-width="8" stroke-linecap="square"/>
+
+    <!-- Scan Field -->
+    <rect x="308" y="120" width="104" height="460" fill="url(#scanGlowHoriz)"/>
+    <line x1="360" y1="104" x2="360" y2="616" stroke="#10B981" stroke-opacity="0.3" stroke-width="2" stroke-dasharray="8 8"/>
+
+    <!-- Left Wing Candi Bentar -->
+    <g fill="#FFFFFF">
+      <rect x="128" y="536" width="184" height="32"/>
+      <rect x="144" y="510" width="168" height="18"/>
+      <path d="M160 502V424H184V352H210V284H236V220H262V164H286V126H316V502H160Z"/>
+      <rect x="146" y="410" width="22" height="14"/>
+      <rect x="170" y="338" width="22" height="14"/>
+      <rect x="196" y="270" width="22" height="14"/>
+      <rect x="222" y="206" width="22" height="14"/>
+      <rect x="248" y="150" width="22" height="14"/>
+    </g>
+    <path d="M296 152V502" stroke="#09090B" stroke-width="7"/>
+
+    <!-- Right Wing Candi Bentar -->
+    <g fill="#FFFFFF">
+      <rect x="408" y="536" width="184" height="32"/>
+      <rect x="408" y="510" width="168" height="18"/>
+      <path d="M560 502V424H536V352H510V284H484V220H458V164H434V126H404V502H560Z"/>
+      <rect x="552" y="410" width="22" height="14"/>
+      <rect x="528" y="338" width="22" height="14"/>
+      <rect x="502" y="270" width="22" height="14"/>
+      <rect x="476" y="206" width="22" height="14"/>
+      <rect x="450" y="150" width="22" height="14"/>
+    </g>
+    <path d="M424 152V502" stroke="#09090B" stroke-width="7"/>
+
+    <!-- Scan Line -->
+    <line x1="274" y1="330" x2="446" y2="330" stroke="#10B981" stroke-width="7"/>
+    <circle cx="360" cy="330" r="13" fill="#09090B" stroke="#10B981" stroke-width="6"/>
+  </g>
+
+  <!-- RIGHT TYPOGRAPHY LOCKUP (Dark Ink on Transparent Background) -->
+  <!-- Top Category Tag -->
+  <rect x="880" y="190" width="490" height="48" fill="#09090B"/>
+  <text x="1125" y="222" text-anchor="middle" fill="#FFFFFF" font-family="IBM Plex Mono, JetBrains Mono, monospace" font-size="22" font-weight="600" letter-spacing="5">BALI SMART SOCIETY • 2026</text>
+
+  <!-- Main Brand Name -->
+  <text x="876" y="450" fill="#09090B" font-family="Noto Serif Display, DejaVu Serif, serif" font-size="196" font-weight="700" letter-spacing="-2">WastraJaga</text>
+
+  <!-- Architectural Divider Line with Emerald Accent -->
+  <rect x="880" y="505" width="160" height="8" fill="#059669"/>
+  <rect x="1056" y="508" width="1220" height="3" fill="#09090B" fill-opacity="0.2"/>
+
+  <!-- Subtitle -->
+  <text x="880" y="580" fill="#18181B" font-family="Inter, IBM Plex Sans, sans-serif" font-size="38" font-weight="600" letter-spacing="3">SISTEM PEMANTAUAN BUSANA ADAT PURA BERBASIS VISION AI</text>
+  <text x="880" y="642" fill="#52525B" font-family="IBM Plex Mono, JetBrains Mono, monospace" font-size="28" font-weight="500" letter-spacing="4">ON-DEVICE PRIVACY • REAL-TIME PECALANG DASHBOARD</text>
+</svg>
