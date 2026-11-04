@@ -5,7 +5,7 @@ export default function Home() {
     <main className="min-h-screen bg-white text-zinc-900 flex flex-col items-center justify-between p-8 sm:p-16 selection:bg-zinc-200">
       {/* Top minimalistic brand stamp */}
       <header className="w-full max-w-4xl flex items-center justify-between text-xs tracking-widest uppercase text-zinc-600 font-mono">
-        <span>Kori Agung AI</span>
+        <span>WastraJaga &bull; Vision AI</span>
         <span>Bali DigiFest 2026</span>
       </header>
 
@@ -13,7 +13,7 @@ export default function Home() {
       <div className="max-w-3xl w-full my-auto text-left space-y-8 py-16">
         <div className="space-y-3">
           <p className="text-xs uppercase tracking-widest text-zinc-600 font-mono">
-            Sistem Pemantauan Etika & Tata Krama
+            Sistem Pemantauan Busana Adat Pura
           </p>
           <h1 className="text-5xl sm:text-7xl font-light tracking-tight text-zinc-950 font-serif">
             WastraJaga.

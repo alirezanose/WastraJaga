@@ -531,7 +531,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
       {/* ── Minimalist Footer ─────────────────────────────────────── */}
       <footer className="border-t border-zinc-200 bg-white py-6 mt-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-8 flex flex-col sm:flex-row items-center justify-between text-xs font-mono text-zinc-500 gap-2">
-          <div>WastraJaga &copy; 2026 &bull; Kori Agung AI</div>
+          <div>WastraJaga &copy; 2026 &bull; Vision AI</div>
           <div>Server-Sent Events &bull; Privasi Terjamin (Zero Image Storage)</div>
         </div>
       </footer>

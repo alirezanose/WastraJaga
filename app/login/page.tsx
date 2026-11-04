@@ -165,7 +165,7 @@ export default function LoginPage() {
     <main className="min-h-screen bg-white text-zinc-900 flex flex-col items-center justify-between p-6 sm:p-12 selection:bg-zinc-200">
       {/* Top minimalistic brand stamp */}
       <header className="w-full max-w-4xl flex items-center justify-between text-xs tracking-widest uppercase text-zinc-500 font-mono">
-        <span>Kori Agung AI</span>
+        <span>WastraJaga &bull; Vision AI</span>
         <span>Bali DigiFest 2026</span>
       </header>
 

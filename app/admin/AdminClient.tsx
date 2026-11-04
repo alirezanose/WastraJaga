@@ -132,7 +132,7 @@ export default function AdminClient({
             </span>
           </div>
           <div className="truncate max-w-md">
-            Rujukan Etika: <span className="text-zinc-900 font-medium">{temple.rulesSource}</span>
+            Rujukan Aturan Busana: <span className="text-zinc-900 font-medium">{temple.rulesSource}</span>
           </div>
         </div>
       </div>
@@ -145,7 +145,7 @@ export default function AdminClient({
             Pusat Pengaturan &amp; Audit Sistem
           </p>
           <h1 className="text-3xl sm:text-4xl font-light tracking-tight text-zinc-950 font-serif">
-            Tata Kelola Etika Pura.
+            Tata Kelola Busana Adat Pura.
           </h1>
         </div>
 
