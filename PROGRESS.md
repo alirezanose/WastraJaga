@@ -30,11 +30,9 @@
 - PostgreSQL 16 (Docker) + Drizzle ORM (`lib/db/schema.ts`, `lib/db/index.ts`)
 - 5 Tabel: `temples`, `users`, `cameras`, `rules`, `events` (tanpa foto)
 - Migrasi ter-generate (`drizzle/`) & seed data awal (`scripts/seed.ts`):
-  - Admin: `admin@wastrajaga.id` / `adminpassword123`
-  - Pecalang: `pecalang@wastrajaga.id` / `pecalangpassword123`
-  - Token kamera dev: `dev-camera-token-12345`
+  - Akun demo Pecalang (`officer`) & Pengelola Pura (`admin`) disediakan untuk juri melalui kanal submission resmi panitia.
 - Auth.js v5 credentials + Argon2id (`auth.config.ts`, `lib/auth.ts`, `middleware.ts`, `app/api/auth/[...nextauth]/route.ts`)
-- Halaman Login (*The White Album*): `app/login/page.tsx` dengan quick-fill akses juri
+- Halaman Login (*The White Album*): `app/login/page.tsx`
 
 ### ✅ FASE 4 — Dashboard Pecalang Real-time
 - `lib/events.ts`: Event bus singleton in-memory untuk saluran `detection:new` dan `officer:action`.

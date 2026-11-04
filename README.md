@@ -1,216 +1,200 @@
-# WastraJaga — Monitoring Busana Adat Pura Berbasis Vision AI
+# WastraJaga
 
-> **Sistem Pemantauan Etika & Tata Krama Busana Adat Pura di Pintu Masuk (*Kori Agung / Candi Bentar*) Berbasis Vision AI On-Device.**  
-> Entri Resmi untuk **AI Web Innovation Challenge – Bali DigiFest 2026**.
-
----
-
-## 🏛️ Latar Belakang & Filosofi Desain
-
-Pura di Bali adalah tempat suci (*kawasan suci*) yang memiliki ketentuan tata krama (*awig-awig* dan Perda Bali No. 5/2020) mengenai kelayakan busana adat persembahyangan:
-1. Menggunakan kain kamen yang menutupi bagian bawah (minimal di bawah lutut).
-2. Mengenakan selendang/senteng yang terikat rapi di pinggang sebagai simbol pengendalian diri.
-3. Mengenakan baju yang sopan dengan bahu tertutup.
-
-**WastraJaga** hadir sebagai asisten digital bagi petugas **Pecalang** di pintu masuk pura dengan prinsip:
-- **AI Menandai, Pecalang yang Memutuskan:** Sistem AI tidak menghakimi atau melarang seseorang secara sepihak. AI bertindak sebagai pemantau objektif atribut busana, sedangkan keputusan akhir tetap sepenuhnya di tangan kearifan petugas pecalang.
-- **Privasi Mutlak (*Privacy by Design*):** 
-  - Tidak ada pengenalan wajah (*no face recognition*).
-  - Wajah dan kepala **otomatis di-blur langsung di browser** sebelum crop atribut busana dikirim ke server.
-  - Server memproses data di memori — **0% penyimpanan foto/video mentah di disk atau database**.
-  - Teks alert netral dan santun: *"Perlu dicek: bahu terbuka"*, bukan *"pelanggar"*.
-- **Estetika Minimalis *"The White Album"* (The Beatles, 1968):**
-  - Antarmuka monokromatik bersih dengan kontras tinggi teks hitam arang (`#09090b`) di atas kanvas putih (`#ffffff`), tipografi editorial berwibawa, dan sudut presisi yang mencerminkan ketenangan sakral pura.
+> **Sistem Pemantauan Busana Adat Pura di Pintu Masuk Berbasis Vision AI On-Device**  
+> Entri Resmi **Tim Drogon** untuk **AI Web Innovation Challenge – Bali DigiFest 2026** (*Kategori: Bali Smart Society*).
 
 ---
 
-## ⚡ Arsitektur Sistem
+## Description
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│ BROWSER LAPTOP / HP DI PINTU MASUK (Client-Side)                       │
-│                                                                        │
-│  [Webcam Stream]                                                       │
-│        │                                                               │
-│        ▼                                                               │
-│  [lib/detector.ts]   --> MediaPipe Tasks Vision on-device (.tflite)    │
-│        │                 (Mendeteksi kategori "person" @ 25-30 FPS)    │
-│        ▼                                                               │
-│  [lib/tracker.ts]    --> IoU Tracker + Fallback Centroid               │
-│        │                 (Menjaga kestabilan ID orang)                 │
-│        ▼                                                               │
-│  [lib/crop.ts]       --> cropAndBlurHead()                             │
-│                          (Crop tubuh ~256px + blur area kepala)        │
-└────────┬───────────────────────────────────────────────────────────────┘
-         │ POST /api/scan (Base64 JPEG ~256px ter-blur, 1x per ID)
-┌────────▼───────────────────────────────────────────────────────────────┐
-│ BACKEND SERVER (Next.js App Router + Node.js)                          │
-│                                                                        │
-│  [app/api/scan]      --> Rate Limiting (10 req/30s) + Validasi Zod     │
-│        │                                                               │
-│        ▼                                                               │
-│  [lib/llm/adapter]   --> Multi-Provider Vision AI                      │
-│        │                 (Mock | Gemini 1.5 | OpenAI | Anthropic)      │
-│        │                 Output: Atribut busana (Bukan vonis)          │
-│        ▼                                                               │
-│  [lib/rules.ts]      --> Rule Engine Dinamis Berdasarkan Aturan DB    │
-│        │                 Vonis: ok | violation | uncertain             │
-│        ├────────────────────────────────┬──────────────────────────────┤
-│        ▼                                ▼                              │
-│  [PostgreSQL 16] (Drizzle ORM)    [lib/events.ts]                      │
-│  Tabel `events`                   In-Memory Event Bus                  │
-│  (Hanya simpan metadata waktu,           │                             │
-│   status, keyakinan, TANPA FOTO)         ▼                             │
-│                                   [GET /api/events] (SSE Stream)       │
-└──────────────────────────────────────────┬─────────────────────────────┘
-                                           │ Push Event Real-Time
-┌──────────────────────────────────────────▼─────────────────────────────┐
-│ DASHBOARD PECALANG (/dashboard) & PANEL ADMIN (/admin)                 │
-│                                                                        │
-│  - Alert Deteksi Real-Time (🟢 Hijau / 🔴 Merah / 🟡 Kuning)           │
-│  - Tombol Tindakan Cepat Pecalang:                                     │
-│    [Izinkan Masuk ✓]  [Beri Kain/Kamen 🥋]  [Tegur ⚠️]  [Abaikan ✕]    │
-│  - Manajemen Aturan Pura & Log Audit Lengkap                           │
-└────────────────────────────────────────────────────────────────────────┘
-```
+**WastraJaga** adalah aplikasi web cerdas yang membantu petugas keamanan adat Bali (**Pecalang**) dan pengelola pura dalam memantau keselarasan busana adat pengunjung di pintu masuk pura (*Candi Bentar / Kori Agung*) secara *real-time*.
+
+Sistem ini menggabungkan **Computer Vision On-Device** (MediaPipe `EfficientDet-Lite0` & `BlazeFace Short-Range` langsung di browser kamera gerbang) dengan **Vision Large Language Model (LLM)** dan **Rule Engine** di sisi server. Berbeda dari CCTV konvensional, **WastraJaga** dirancang dengan prinsip **Privacy by Design**: area wajah pengunjung otomatis dipikselasi/di-blur di perangkat browser sebelum potongan (*crop*) pakaian dikirim ke server, dan server **tidak menyimpan foto atau video mentah sama sekali (0% Raw Image Storage)**. AI hanya bertugas menandai atribut pakaian, sedangkan keputusan akhir tetap sepenuhnya berada di tangan Pecalang.
 
 ---
 
-## 🚀 Panduan Menjalankan Sistem
+## Problem & Target User
 
-### 1. Menjalankan via Docker Compose (Rekomendasi untuk Juri)
+### Masalah Nyata di Lapangan
+1. **Lonjakan Wisatawan & Keterbatasan Pecalang:** Pura-pura besar di Bali (seperti Pura Agung Besakih, Pura Tirta Empul, Pura Ulun Danu, dan Pura Lempuyang) menerima ratusan hingga ribuan pengunjung setiap hari. Pecalang di gerbang masuk sering kewalahan mengawasi kelengkapan busana adat secara manual satu per satu.
+2. **Ketidaktahuan Pengunjung atas Pakem Busana Pura:** Sesuai *Awig-awig Desa Adat* dan SE Gubernur Bali / Perda Provinsi Bali No. 5 Tahun 2020, memasuki kawasan suci pura mewajibkan:
+   - Bawahan menggunakan **kamen/sarung** yang menutupi lutut.
+   - Mengikatkan **selendang/senteng** di pinggang.
+   - Mengenakan **pakaian atasan yang sopan dengan bahu tertutup** (bukan tanpa baju/tanktop/bahu terbuka).
+3. **Sensitivitas Privasi di Kawasan Suci:** Kamera pengawas biasa yang merekam wajah pengunjung ke server berisiko melanggar privasi dan Undang-Undang Perlindungan Data Pribadi (UU PDP).
 
-Sistem sudah dilengkapi container multi-stage Next.js dan PostgreSQL 16 yang siap dijalankan dengan satu perintah:
-
-```bash
-# 1. Salin template environment
-cp .env.example .env
-
-# 2. Jalankan docker-compose (Database PostgreSQL + Next.js App)
-docker compose up -d --build
-```
-
-Aplikasi dapat langsung diakses di:
-- **Beranda:** [http://127.0.0.1:3000](http://127.0.0.1:3000)
-- **Kamera Deteksi:** [http://127.0.0.1:3000/camera](http://127.0.0.1:3000/camera)
-- **Login Petugas:** [http://127.0.0.1:3000/login](http://127.0.0.1:3000/login)
-- **Dashboard Pecalang:** [http://127.0.0.1:3000/dashboard](http://127.0.0.1:3000/dashboard)
-- **Panel Admin:** [http://127.0.0.1:3000/admin](http://127.0.0.1:3000/admin)
+### Target Pengguna (Target User)
+1. **Pecalang (Petugas Keamanan Adat):** Membutuhkan notifikasi instan (*real-time alert*) di tablet/HP pos jaga ketika ada pengunjung yang memerlukan bantuan peminjaman kain kamen/selendang atau teguran santun.
+2. **Pengelola Pura / Prajuru Desa Adat (Administrator):** Membutuhkan panel untuk mengatur aturan busana spesifik tiap pura, mengelola kamera gerbang, dan memantau log audit kepatuhan harian tanpa melanggar privasi pengunjung.
 
 ---
 
-### 2. Akun Pengujian Juri (*Demo Credentials*)
+## Key Features
 
-Pada halaman login (`/login`), tersedia tombol **1-Klik Isi Otomatis** khusus untuk pengujian juri:
-
-| Role | Email | Password | Hak Akses |
-| :--- | :--- | :--- | :--- |
-| **Pecalang / Officer** | `pecalang@wastrajaga.id` | `pecalangpassword123` | Mengakses `/dashboard` & memverifikasi tindakan |
-| **Administrator** | `admin@wastrajaga.id` | `adminpassword123` | Mengakses `/dashboard` dan panel konfigurasi `/admin` |
-
----
-
-### 3. Pengujian Skenario Juri (Mode Mock vs Mode Live)
-
-Aplikasi dirancang agar **dapat diuji 100% secara offline** tanpa memerlukan API key eksternal berbayar:
-
-#### A. Mode Mock (Default — Tanpa API Key)
-Secara default, `.env.example` diset ke `LLM_PROVIDER=mock`.
-- Adapter akan mensimulasikan inferensi Vision AI secara cerdas berdasarkan variasi frame.
-- Juri dapat langsung menguji alur deteksi, overlay kamera, penerimaan stream SSE, dan pengambilan tindakan pecalang tanpa konfigurasi tambahan.
-
-#### B. Mode Live Vision AI (Online)
-Jika ingin menguji menggunakan LLM Vision asli, ubah file `.env`:
-```env
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=AIzaSy...
-```
-*(Mendukung provider `gemini`, `openai`, dan `anthropic` melalui adapter terpadu `lib/llm/adapter.ts`)*.
+1. **CCTV Matrix Multi-Channel (`2x2 Grid` & `1x1 Focus`) dengan Dual On-Device AI (`/camera`):**
+   - Mendeteksi tubuh pengunjung (`ObjectDetector`) dan titik koordinat wajah (`FaceDetector` BlazeFace) secara simultan di browser pada 25–30 FPS.
+   - Mendukung konektor multi-sumber: **USB Webcam / Capture Card (UVC)**, **IP Camera (HTTP MJPEG / HLS `.m3u8`)**, dan gateway **RTSP-to-WebRTC**.
+   - **Auto Re-Scan Tiap 5 Detik** + tombol **Scan Sekarang** untuk pengujian responsif.
+2. **On-Device Face Blur & Panel Bukti Privasi (*Zero-Face & Zero-Image Storage*):**
+   - Piksel wajah otomatis dimozaik/di-blur di browser sebelum meninggalkan perangkat kamera.
+   - Menyediakan **Panel Bukti Privasi Live** di samping layar CCTV yang memperlihatkan potongan gambar ~256px yang dikirim ke AI beserta hasil ekstraksi atributnya.
+3. **Multi-Provider Vision AI & Rule Engine Etika Busana (`/api/scan`):**
+   - Mengekstrak atribut terstruktur JSON (`upper_body.shoulders_covered`, `sash.present`, `lower_garment.type`, `lower_garment.covers_knees`, `full_body_visible`).
+   - Menghasilkan status objektif: **`ok` (Hijau ✓)**, **`violation` (Merah ✗)**, atau **`uncertain` (Kuning ?)** dalam bahasa netral (*"perlu dicek: bahu terbuka / tidak berbaju atasan"*).
+4. **Dashboard Pecalang Real-Time Berbasis SSE (`/dashboard`):**
+   - Menggunakan **Server-Sent Events (SSE)** untuk mendorong alert deteksi ke layar Pecalang dalam hitungan milidetik tanpa *polling*.
+   - Dilengkapi tombol keputusan 1-klik: **Izinkan Masuk**, **Pinjamkan Kamen/Selendang**, **Beri Teguran**, atau **Abaikan**.
+5. **Panel Administrasi Pura & Auto-Prune Audit Log (`/admin`):**
+   - Mengelola aturan busana per pura, inventaris kamera gerbang, serta **Log Audit Pemeriksaan** lengkap dengan tanggal & waktu WITA dan fitur **Auto-Prune (otomatis menjaga maksimal 100 log terbaru)** agar basis data selalu ringan.
 
 ---
 
-## 🧪 Verifikasi Kode & Pengujian Teknis
+## Tech Stack
 
-Proyek ini mempertahankan standar kualitas kode yang ketat (*zero error, zero warning*):
-
-```bash
-# 1. Menjalankan Unit Test (12 unit test lulus)
-npm test
-
-# 2. Menjalankan Static Code Analysis / Linter
-npm run lint
-
-# 3. Menjalankan Next.js Production Build
-npm run build
-
-# 4. Sinkronisasi Skema Database Drizzle
-npm run db:push
-
-# 5. Pengisian Data Awal (Seed Pura, Aturan, Akun)
-npm run db:seed
-```
+| Lapisan | Teknologi yang Digunakan |
+| :--- | :--- |
+| **Frontend** | Next.js 15 (App Router), React 19, TypeScript 5.7, Tailwind CSS 3.4 |
+| **On-Device Edge AI (Browser)** | `@mediapipe/tasks-vision` (WebAssembly + `efficientdet_lite0.tflite` & `blaze_face_short_range.tflite` di-host lokal) |
+| **Backend & API** | Next.js Route Handlers (Node.js 22 Runtime), Server-Sent Events (SSE) via In-Memory `EventEmitter`, Zod Schema Validation |
+| **Cloud Vision AI** | Google Gemini Vision API (`gemini-3.1-flash-lite` / `gemini-2.5-flash`) via adapter multi-provider (`gemini` \| `openai` \| `anthropic` \| `mock`) |
+| **Database & ORM** | PostgreSQL 16 Alpine, Drizzle ORM, Drizzle Kit |
+| **Authentication & Security** | Auth.js v5 (NextAuth), Argon2id Password Hashing, Role-Based Middleware (`officer` & `admin`), Rate Limiting & Camera API Token |
+| **Hosting & Deployment** | Microsoft Azure (Docker Compose: Container App + PostgreSQL 16) dengan domain kustom `ahmadalireza.site` |
 
 ---
 
-## 🎨 Sistem Indikator Status (Konsisten di Seluruh Kode)
+## AI Implementation
 
-| Status | Warna Visual | Simbol | Makna & Tindakan Pecalang |
-| :--- | :--- | :---: | :--- |
-| **Pending** | Abu-abu Zinc | `○` | Orang baru terdeteksi / sedang dianalisis Vision AI |
-| **OK** | Hijau Emerald | `✓` | Busana adat lengkap sesuai pakem pura |
-| **Violation**| Merah | `✗` | Terindikasi ada atribut yang kurang (misal: kamen di atas lutut, tanpa selendang) |
-| **Uncertain** | Kuning Amber | `?` | Tingkat keyakinan model rendah / tubuh terhalang; pecalang diminta cek mandiri |
-| **Error** | Abu-abu Bergaris | `–` | Gangguan koneksi atau timeout pemrosesan |
+Sistem menerapkan arsitektur **Hybrid Two-Stage AI** agar hemat bandwidth, cepat, dan menjaga privasi:
+
+1. **Tahap 1 — Edge Computer Vision di Browser (`lib/detector.ts`, `lib/tracker.ts`, `lib/crop.ts`):**
+   - **Model:** MediaPipe `EfficientDet-Lite0` (deteksi badan `person`) + `BlazeFace Short-Range` (deteksi titik wajah) yang dijalankan via WebAssembly di browser.
+   - **Metode:** Tracking posisi orang lintas frame menggunakan *Intersection over Union (IoU)* dan jarak *centroid*. Setelah terdeteksi stabil, fungsi `cropAndBlurHead()` memotong area tubuh menjadi resolusi kecil (~256px) dan mem-pixelate area wajah.
+2. **Tahap 2 — Vision LLM Attribute Extraction & Rule Engine di Server (`lib/llm/adapter.ts`, `lib/rules.ts`):**
+   - **Model:** Google Gemini (`gemini-3.1-flash-lite` dengan auto-fallback ke `gemini-2.5-flash-lite` / `gemini-2.5-flash`, serta mode `mock` deterministik untuk pengujian tanpa API key).
+   - **Input ke Model:** Potongan gambar JPEG Base64 (~15–30 KB, kepala sudah ter-blur) + *System Prompt* ketat (`lib/llm/prompt.ts`).
+   - **Output dari Model (JSON Tervalidasi Zod):**
+     ```json
+     {
+       "full_body_visible": true,
+       "lower_garment": { "type": "kamen", "covers_knees": true, "confidence": 0.92 },
+       "sash": { "present": true, "confidence": 0.88 },
+       "upper_body": { "shoulders_covered": true, "confidence": 0.95 }
+     }
+     ```
+   - **Alasan AI Diperlukan:** Aturan busana adat Bali memiliki variasi warna, corak kain kamen, kebaya, baju safari, dan ikatan senteng yang sangat beragam sehingga tidak dapat diselesaikan dengan sensor biasa, namun membutuhkan pemahaman konteks visual dari Vision AI yang dipadukan dengan *Rule Engine* deterministik.
 
 ---
 
-## 📁 Struktur Kode Proyek
+## Architecture / Data Flow
 
 ```text
-├── app/
-│   ├── admin/              # Panel pengelola pura (aturan, kamera, audit log)
-│   ├── api/
-│   │   ├── admin/rules/    # API CRUD aturan busana per pura
-│   │   ├── auth/           # Endpoint NextAuth v5
-│   │   ├── events/         # Stream Server-Sent Events (SSE) + Action handler
-│   │   └── scan/           # Endpoint utama analisis Vision AI & Rule Engine
-│   ├── camera/             # Antarmuka kamera browser on-device MediaPipe
-│   ├── dashboard/          # Dashboard pecalang real-time dengan SSE
-│   ├── login/              # Halaman login minimalis The White Album
-│   ├── layout.tsx          # Layout global Next.js
-│   └── page.tsx            # Beranda WastraJaga
-├── drizzle/                # File migrasi SQL PostgreSQL
-├── lib/
-│   ├── db/                 # Skema Drizzle ORM (5 tabel) & client database
-│   ├── llm/                # Adapter multi-provider (mock, gemini, openai, anthropic), schema, prompt
-│   ├── crop.ts             # Modul privasi: crop tubuh + blur kepala di browser
-│   ├── detector.ts         # Wrapper MediaPipe Tasks Vision on-device
-│   ├── events.ts           # Event emitter singleton in-memory untuk SSE
-│   ├── rules.ts            # Rule engine evaluasi busana pura
-│   └── tracker.ts          # Algoritma tracking objek IoU + Centroid
-├── docs/
-│   └── third-party.md      # AI & Technology Disclosure lengkap
-├── scripts/
-│   ├── copy-mediapipe.mjs  # Otomasi penyalinan binary WASM & model MediaPipe
-│   └── seed.ts             # Script seed data awal pura, aturan, dan pengguna
-├── tests/
-│   ├── rules.test.ts       # 8 unit test untuk rule engine busana adat
-│   └── tracker.test.ts     # 4 unit test untuk IoU object tracking
-├── PROGRESS.md             # Dokumen status pengerjaan (Single Source of Truth)
-├── docker-compose.yml      # Orkestrasi Docker (App Next.js, PostgreSQL 16, Tunnel)
-├── Dockerfile              # Multi-stage production build Next.js standalone
-└── package.json            # Konfigurasi dependensi dan scripts npm
+[Pengunjung di Gerbang Pura]
+        │
+        ▼
+[1. Browser Kamera (/camera)]
+   ├─ MediaPipe ObjectDetector (Deteksi Badan) + FaceDetector (Deteksi Wajah)
+   ├─ IoU Object Tracker (Penomoran Track ID #1, #2, ...)
+   └─ cropAndBlurHead() ──► Potong Tubuh ~256px + Mozaik/Blur Wajah di Browser
+        │
+        │ POST /api/scan (JSON: track_id + Base64 JPEG ~25KB tanpa wajah)
+        ▼
+[2. Backend Next.js (/api/scan)]
+   ├─ Validasi Token Kamera, Ukuran Gambar (<150KB), & Rate Limit
+   ├─ Vision LLM Adapter (Gemini / OpenAI / Anthropic / Mock) ──► JSON Atribut Pakaian
+   ├─ Zod Schema Validation + Rule Engine (lib/rules.ts) ──► Status: ok | violation | uncertain
+   ├─ Simpan Metadata ke PostgreSQL 16 (Tabel `events` — 0% Foto, Auto-Prune maks 100 baris)
+   └─ Broadcast Event ke In-Memory Event Bus (lib/events.ts)
+        │
+        │ Push Real-Time via Server-Sent Events (GET /api/events)
+        ▼
+[3. Dashboard Pecalang (/dashboard) & Panel Admin (/admin)]
+   ├─ Pecalang menerima alert warna (Hijau ✓ / Merah ✗ / Kuning ?) detik itu juga
+   └─ Pecalang menekan tombol keputusan (Izinkan / Beri Pinjaman Kain / Tegur) ──► Tersimpan di DB
 ```
 
 ---
 
-## 📜 AI & Technology Disclosure
+## Installation / Run Instructions
 
-Seluruh daftar pustaka, model pra-latih (*pre-trained model*), dan aset pihak ketiga yang digunakan dalam sistem WastraJaga terdokumentasi secara transparan di dokumen:
-👉 **[`docs/third-party.md`](file:///home/learn/contest/bali-contest/docs/third-party.md)**.
+### Opsi A — Menjalankan dengan Docker Compose (Direkomendasikan)
+
+```bash
+# 1. Clone repository
+git clone <URL_REPO_GITHUB_ANDA>
+cd bali-contest
+
+# 2. Salin konfigurasi environment contoh
+cp .env.example .env
+
+# 3. Jalankan PostgreSQL 16 + Aplikasi Next.js
+docker compose up -d --build
+
+# 4. (Opsional jika DB baru pertama kali dibuat) Jalankan migrasi & seed data awal
+docker run --rm --network bali-contest_default \
+  -e DATABASE_URL="postgresql://postgres:postgres_password_dev@db:5432/wastrajaga" \
+  -v $(pwd):/app -w /app node:22-alpine sh -c "npx drizzle-kit push && npx tsx scripts/seed.ts"
+```
+
+Buka aplikasi di browser:
+- **Beranda:** `http://localhost:3000`
+- **CCTV Matrix Kamera:** `http://localhost:3000/camera`
+- **Login Petugas / Admin:** `http://localhost:3000/login`
+- **Dashboard Pecalang:** `http://localhost:3000/dashboard`
+- **Panel Admin Pura:** `http://localhost:3000/admin`
+
+### Opsi B — Perintah Verifikasi Kualitas Kode (Test, Lint, Build)
+
+```bash
+npm test          # Menjalankan 12 unit test (Vitest: Rule Engine & Object Tracker)
+npm run lint      # Pemeriksaan ESLint (0 error, 0 warning)
+npm run build     # Build produksi Next.js
+```
 
 ---
 
-## 👥 Tim Pengembang
+## Deployment URL
 
-Dikembangkan dengan dedikasi untuk pelestarian etika dan budaya luhur Pura di Bali pada ajang **AI Web Innovation Challenge – Bali DigiFest 2026**.
+- **Production / Live MVP URL (Microsoft Azure):** [https://wastrajaga.ahmadalireza.site](https://wastrajaga.ahmadalireza.site) *(Subdomain resmi pada `ahmadalireza.site`)*
+
+---
+
+## Demo Account
+
+Sesuai dengan ketentuan keamanan **Panduan Peserta Bali DigiFest 2026 (Bab 7 & Lampiran B: *"Credential demo dikirim melalui kanal/form panitia, bukan public repository"* )**:
+- Kredensial akun demo untuk **Pecalang (`officer`)** dan **Pengelola Pura (`admin`)** pada deployment aktif telah disertakan secara privat pada **Formulir Submission Resmi Panitia** dan dokumen **Proposal PDF**.
+- Untuk pengujian lokal di mesin sendiri menggunakan `scripts/seed.ts`, Anda dapat mengatur variabel `SEED_ADMIN_PASSWORD` dan `SEED_OFFICER_PASSWORD` pada file `.env` lokal Anda.
+
+---
+
+## Known Limitations
+
+Sebagai produk tahap **Minimum Viable Product (MVP)**, sistem memiliki beberapa batasan saat ini yang menjadi fokus pengembangan berikutnya:
+1. **Penutup Kepala (Udeng) Belum Dinilai:** Demi menjaga privasi wajah pengunjung (*Privacy by Design*), seluruh area kepala dan wajah di-blur di browser sebelum dikirim ke AI, sehingga atribut penutup kepala pria (*udeng*) sengaja tidak dinilai pada versi MVP.
+2. **Ketergantungan Sudut Kamera untuk Kain Bawah:** Jika pengunjung berdiri terlalu dekat dengan webcam laptop sehingga hanya tubuh bagian atas (dada dan bahu) yang masuk ke dalam frame, AI tetap dapat mendeteksi pelanggaran baju atasan/bahu terbuka dengan akurat, namun akan menandai kain bawah sebagai `uncertain` (*tubuh tidak terlihat penuh*) untuk diverifikasi langsung oleh Pecalang.
+3. **Koneksi RTSP CCTV Industri Membutuhkan Gateway:** Browser modern tidak mendukung protokol `rtsp://` secara langsung; untuk menghubungkan kamera CCTV RTSP diperlukan container gateway pendamping (seperti MediaMTX / go2rtc) untuk mengubah RTSP menjadi HLS (`.m3u8`) atau WebRTC, sedangkan kamera USB (UVC) dan IP Camera HTTP MJPEG dapat langsung dihubungkan dari antarmuka `/camera`.
+4. **In-Memory Event Bus SSE:** Distribusi notifikasi real-time SSE saat ini berjalan menggunakan *in-memory singleton* pada satu instance server Node.js (cukup untuk satu kompleks pura, namun membutuhkan Redis Pub/Sub jika di-scale ke banyak server horizontal).
+
+---
+
+## Third-party Resources / Credits
+
+Seluruh penggunaan model AI, pustaka *open-source*, lisensi, serta **Tabel Resmi Lampiran C — AI & Technology Disclosure** didokumentasikan secara lengkap pada:
+👉 **[`docs/third-party.md`](./docs/third-party.md)**
+
+Ringkasan kredit utama:
+- **MediaPipe Tasks Vision (`EfficientDet-Lite0` & `BlazeFace Short-Range`)** oleh Google (Apache-2.0) — di-host mandiri di `public/mediapipe/` dan `public/models/`.
+- **Google Gemini API (`@google/generative-ai`)** oleh Google (Apache-2.0).
+- **Next.js, React, Tailwind CSS, Drizzle ORM, Auth.js v5, Argon2, Vitest, Zod** (MIT / Apache-2.0 / ISC).
+
+---
+
+## Team Members
+
+**Nama Tim:** **Drogon**
+
+| Nama Lengkap | Peran dalam Tim | Tanggung Jawab Utama |
+| :--- | :--- | :--- |
+| **Ahmad Ali Reza** | Ketua Tim / Lead Full-Stack & AI Engineer | Arsitektur sistem, integrasi MediaPipe & Vision LLM, deployment Azure (`ahmadalireza.site`) |
+| **Muhammad Saifuddin Zuhri** | Backend & Data Engineer | Skema PostgreSQL & Drizzle ORM, Rule Engine, autentikasi Auth.js, & SSE real-time stream |
+| **Muhammad Sofyan** | Frontend & UI/UX Engineer | Desain antarmuka *The White Album*, CCTV Matrix `/camera`, Dashboard Pecalang, & pengujian |

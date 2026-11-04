@@ -41,12 +41,6 @@ function LoginForm() {
     }
   };
 
-  const handleQuickFill = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setErrorMessage("");
-  };
-
   return (
     <div className="w-full max-w-md space-y-8">
       {/* Editorial Title */}
@@ -117,38 +111,8 @@ function LoginForm() {
         </button>
       </form>
 
-      {/* Demo Credentials Box for Judges */}
-      <div className="border-t border-zinc-200 pt-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs uppercase tracking-wider text-zinc-500 font-mono">
-            Akses Cepat Pengujian (Juri)
-          </span>
-          <span className="text-[10px] font-mono text-zinc-400">Klik untuk isi otomatis</span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 text-left">
-          <button
-            type="button"
-            onClick={() => handleQuickFill("pecalang@wastrajaga.id", "pecalangpassword123")}
-            className="border border-zinc-200 bg-zinc-50/50 p-2.5 text-left hover:border-zinc-900 transition-colors text-xs font-mono space-y-1"
-          >
-            <div className="text-[10px] uppercase text-zinc-500">Pecalang / Officer</div>
-            <div className="font-semibold text-zinc-900 truncate">pecalang@...</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleQuickFill("admin@wastrajaga.id", "adminpassword123")}
-            className="border border-zinc-200 bg-zinc-50/50 p-2.5 text-left hover:border-zinc-900 transition-colors text-xs font-mono space-y-1"
-          >
-            <div className="text-[10px] uppercase text-zinc-500">Administrator</div>
-            <div className="font-semibold text-zinc-900 truncate">admin@...</div>
-          </button>
-        </div>
-      </div>
-
       {/* Back to Home Navigation */}
-      <div className="text-center pt-2">
+      <div className="border-t border-zinc-200 pt-6 text-center">
         <Link
           href="/"
           className="text-xs font-mono text-zinc-500 hover:text-zinc-950 transition-colors tracking-wide"
