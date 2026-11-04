@@ -64,12 +64,19 @@ function parseAndValidate(raw: string): LLMOutput {
   return LLMOutputSchema.parse(parsed);
 }
 
+// Helper: bersihkan prefix base64 jika ada
+function cleanBase64(input: string): string {
+  return input.replace(/^data:image\/[a-z]+;base64,/, "").trim();
+}
+
 // ──────────────────────────────────────────────
 // Gemini Provider
 // ──────────────────────────────────────────────
 async function geminiAnalyze(imageBase64: string): Promise<LLMOutput> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY tidak di-set");
+
+  const sanitizedBase64 = cleanBase64(imageBase64);
 
   // Lazy import agar tidak error saat pakai mock/openai/anthropic
   const { GoogleGenerativeAI } = await import("@google/generative-ai");
@@ -84,7 +91,7 @@ async function geminiAnalyze(imageBase64: string): Promise<LLMOutput> {
     {
       inlineData: {
         mimeType: "image/jpeg",
-        data: imageBase64,
+        data: sanitizedBase64,
       },
     },
   ]);
@@ -99,6 +106,8 @@ async function geminiAnalyze(imageBase64: string): Promise<LLMOutput> {
 async function openaiAnalyze(imageBase64: string): Promise<LLMOutput> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY tidak di-set");
+
+  const sanitizedBase64 = cleanBase64(imageBase64);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -117,7 +126,7 @@ async function openaiAnalyze(imageBase64: string): Promise<LLMOutput> {
             { type: "text", text: buildUserMessage() },
             {
               type: "image_url",
-              image_url: { url: `data:image/jpeg;base64,${imageBase64}`, detail: "low" },
+              image_url: { url: `data:image/jpeg;base64,${sanitizedBase64}`, detail: "low" },
             },
           ],
         },
@@ -141,6 +150,8 @@ async function anthropicAnalyze(imageBase64: string): Promise<LLMOutput> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY tidak di-set");
 
+  const sanitizedBase64 = cleanBase64(imageBase64);
+
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -158,7 +169,7 @@ async function anthropicAnalyze(imageBase64: string): Promise<LLMOutput> {
           content: [
             {
               type: "image",
-              source: { type: "base64", media_type: "image/jpeg", data: imageBase64 },
+              source: { type: "base64", media_type: "image/jpeg", data: sanitizedBase64 },
             },
             { type: "text", text: buildUserMessage() },
           ],

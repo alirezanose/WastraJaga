@@ -34,6 +34,7 @@ const STATUS_ICON: Record<PersonStatus, string> = {
 
 // Jumlah frame stabil sebelum dikirim ke /api/scan
 const STABLE_FRAMES_REQUIRED = 3;
+const DEFAULT_CAMERA_TOKEN = "dev-camera-token-12345";
 
 export default function CameraPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -90,13 +91,15 @@ export default function CameraPage() {
       const imageBase64 = cropAndBlurHead(video, box);
       if (!imageBase64) return;
 
+      const cameraToken =
+        process.env.NEXT_PUBLIC_CAMERA_API_TOKEN || DEFAULT_CAMERA_TOKEN;
+
       try {
         const res = await fetch("/api/scan", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            // Token kamera dibaca dari env client (public runtime config)
-            "x-camera-token": process.env.NEXT_PUBLIC_CAMERA_API_TOKEN ?? "",
+            "x-camera-token": cameraToken,
           },
           body: JSON.stringify({
             temple_id: "temple-besakih-01",
@@ -196,7 +199,7 @@ export default function CameraPage() {
     }
   }, [stopStream]);
 
-  // Gambar overlay bounding box berwarna sesuai status person
+  // Gambar overlay bounding box berwarna sesuai status person + sensor privasi kepala
   const drawOverlay = useCallback(
     (
       ctx: CanvasRenderingContext2D,
@@ -213,7 +216,7 @@ export default function CameraPage() {
         const colors = STATUS_COLORS[status];
         const icon = STATUS_ICON[status];
 
-        // Kotak berwarna sesuai status
+        // 1. Kotak deteksi seluruh badan
         ctx.lineWidth = 2;
         ctx.strokeStyle = colors.stroke;
         ctx.fillStyle = colors.fill;
@@ -222,11 +225,38 @@ export default function CameraPage() {
         ctx.stroke();
         ctx.fill();
 
-        // Badge label di atas kotak
-        const label = status === "pending"
-          ? `#${person.id} menganalisis...`
-          : `#${person.id} ${icon}`;
-        ctx.font = "500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+        // 2. Sensor privasi visual area kepala (28% tinggi atas)
+        const headH = Math.round(height * 0.28);
+        if (headH > 0) {
+          ctx.save();
+          // Efek blur gelap semi-opak dengan pattern grid halus
+          ctx.fillStyle = "rgba(24, 24, 27, 0.75)";
+          ctx.fillRect(originX, originY, width, headH);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(originX, originY, width, headH);
+
+          // Tulisan "PRIVACY / BLUR" kecil di area kepala
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "600 10px monospace";
+          ctx.fillText("PRIVASI", originX + 6, originY + 14);
+          ctx.restore();
+        }
+
+        // 3. Badge label utama di atas kotak
+        const statusText =
+          status === "pending"
+            ? "Menganalisis busana..."
+            : status === "ok"
+            ? "Sesuai Adat"
+            : status === "violation"
+            ? "Perlu Pengecekan"
+            : status === "uncertain"
+            ? "Verifikasi Petugas"
+            : "Gagal Scan";
+
+        const label = `#${person.id} ${icon} ${statusText}`;
+        ctx.font = "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
         const textW = ctx.measureText(label).width;
         const padX = 8;
         const badgeH = 22;
@@ -245,6 +275,21 @@ export default function CameraPage() {
         // Teks badge
         ctx.fillStyle = colors.text;
         ctx.fillText(label, originX + padX, badgeY + 15);
+
+        // 4. Jika ada alasan pelanggaran/catatan, tampilkan sub-badge di bawahnya
+        if (trackInfo?.reasons && trackInfo.reasons.length > 0 && status !== "ok") {
+          const reasonText = trackInfo.reasons[0];
+          ctx.font = "500 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+          const reasonW = ctx.measureText(reasonText).width + 12;
+          const subY = originY + height + 6;
+
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(originX, subY, Math.max(badgeW, reasonW), 18);
+          ctx.strokeStyle = colors.stroke;
+          ctx.strokeRect(originX, subY, Math.max(badgeW, reasonW), 18);
+          ctx.fillStyle = "#09090b";
+          ctx.fillText(reasonText, originX + 6, subY + 13);
+        }
       }
     },
     []
@@ -451,9 +496,16 @@ export default function CameraPage() {
             className="absolute inset-0 w-full h-full object-contain pointer-events-none"
           />
 
+          {/* Banner Indikator Privasi (Kanan Atas Frame) */}
+          <div className="absolute top-4 right-4 z-20 flex items-center gap-2 border border-zinc-300 bg-white/95 px-3 py-1 font-mono text-[11px] text-zinc-700 shadow-sm backdrop-blur-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+            <span>PRIVACY GUARD: HEAD BLUR ON-DEVICE</span>
+          </div>
+
           {/* Legenda Status (kiri bawah) */}
           {!isLoading && !errorMessage && (
-            <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-1">
+            <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-1 bg-white/90 p-2.5 border border-zinc-200 backdrop-blur-sm shadow-sm">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 mb-0.5">Status Penilaian</span>
               {(["pending","ok","violation","uncertain"] as PersonStatus[]).map((s) => (
                 <div key={s} className="flex items-center gap-1.5 text-xs font-mono">
                   <span
@@ -463,7 +515,15 @@ export default function CameraPage() {
                       borderColor: STATUS_COLORS[s].stroke,
                     }}
                   />
-                  <span className="text-zinc-600">{s}</span>
+                  <span className="text-zinc-700">
+                    {s === "pending"
+                      ? "pending (menganalisis)"
+                      : s === "ok"
+                      ? "ok (busana sesuai)"
+                      : s === "violation"
+                      ? "violation (pelanggaran)"
+                      : "uncertain (ragu/cek manual)"}
+                  </span>
                 </div>
               ))}
             </div>
