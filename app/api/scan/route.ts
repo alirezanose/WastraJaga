@@ -44,7 +44,7 @@ type ScanRequest = z.infer<typeof ScanRequestSchema>;
 // Rate limiting sederhana (in-memory)
 // camera_id → { count, windowStart }
 // ──────────────────────────────────────────────
-const RATE_LIMIT_MAX = 10; // max request per window
+const RATE_LIMIT_MAX = 30; // max request per window (mendukung auto re-scan 5 detik)
 const RATE_LIMIT_WINDOW_MS = 30_000; // 30 detik
 
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
@@ -205,5 +205,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     reasons: verdict.reasons,
     confidence: verdict.confidence,
     latency_ms: latencyMs,
+    attributes: llmOutput,
   });
 }

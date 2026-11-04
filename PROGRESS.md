@@ -17,7 +17,7 @@
 - Next.js 15 (App Router, Tailwind CSS, TypeScript)
 - MediaPipe Tasks Vision (`efficientdet_lite0_v1.tflite` di `public/mediapipe/`)
 - Object Tracker IoU + Centroid (`lib/tracker.ts`, test lulus)
-- Privacy module `cropAndBlurHead` (`lib/crop.ts`): blur kepala di browser sebelum gambar dikirim
+- Privacy module `cropAndBlurHead` (`lib/crop.ts`): blur/pixelation kepala di browser sebelum gambar dikirim + visual head privacy sensor langsung pada viewport
 - Halaman kamera (`app/camera/page.tsx`) & Beranda (`app/page.tsx`) dengan tema *The White Album*
 
 ### ✅ FASE 2 — Vision AI Pipeline & Rule Engine

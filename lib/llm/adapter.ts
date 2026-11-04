@@ -77,27 +77,43 @@ async function geminiAnalyze(imageBase64: string): Promise<LLMOutput> {
   if (!apiKey) throw new Error("GEMINI_API_KEY tidak di-set");
 
   const sanitizedBase64 = cleanBase64(imageBase64);
-
-  // Lazy import agar tidak error saat pakai mock/openai/anthropic
   const { GoogleGenerativeAI } = await import("@google/generative-ai");
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: SYSTEM_PROMPT,
-  });
 
-  const result = await model.generateContent([
-    buildUserMessage(),
-    {
-      inlineData: {
-        mimeType: "image/jpeg",
-        data: sanitizedBase64,
-      },
-    },
-  ]);
+  // Gunakan model aktif terbaru dengan fallback otomatis
+  const candidateModels = [
+    process.env.GEMINI_MODEL || "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-3.1-flash-lite",
+  ];
 
-  const text = result.response.text();
-  return parseAndValidate(text);
+  let lastError: unknown = null;
+  for (const modelName of candidateModels) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction: SYSTEM_PROMPT,
+      });
+
+      const result = await model.generateContent([
+        buildUserMessage(),
+        {
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: sanitizedBase64,
+          },
+        },
+      ]);
+
+      const text = result.response.text();
+      return parseAndValidate(text);
+    } catch (err) {
+      lastError = err;
+      console.warn(`[LLM adapter] Model Gemini "${modelName}" gagal, mencoba kandidat berikutnya...`);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Semua kandidat model Gemini gagal");
 }
 
 // ──────────────────────────────────────────────
