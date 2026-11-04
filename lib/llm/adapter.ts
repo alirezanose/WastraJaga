@@ -80,11 +80,11 @@ async function geminiAnalyze(imageBase64: string): Promise<LLMOutput> {
   const { GoogleGenerativeAI } = await import("@google/generative-ai");
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  // Gunakan model aktif terbaru dengan fallback otomatis
+  // Gunakan model tercepat yang didukung API key sebagai prioritas utama
   const candidateModels = [
-    process.env.GEMINI_MODEL || "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-3.1-flash-lite",
+    process.env.GEMINI_MODEL || "gemini-3.1-flash-lite",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
   ];
 
   let lastError: unknown = null;
@@ -95,21 +95,26 @@ async function geminiAnalyze(imageBase64: string): Promise<LLMOutput> {
         systemInstruction: SYSTEM_PROMPT,
       });
 
-      const result = await model.generateContent([
-        buildUserMessage(),
-        {
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: sanitizedBase64,
+      const result = await withTimeout(
+        model.generateContent([
+          buildUserMessage(),
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: sanitizedBase64,
+            },
           },
-        },
-      ]);
+        ]),
+        4500
+      );
 
       const text = result.response.text();
       return parseAndValidate(text);
     } catch (err) {
       lastError = err;
-      console.warn(`[LLM adapter] Model Gemini "${modelName}" gagal, mencoba kandidat berikutnya...`);
+      console.warn(
+        `[LLM adapter] Model Gemini "${modelName}" gagal (${err instanceof Error ? err.message.slice(0, 80) : "error"}), mencoba kandidat berikutnya...`
+      );
     }
   }
 

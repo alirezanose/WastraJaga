@@ -31,6 +31,13 @@ interface ScanProofItem {
   attributes?: LLMOutput;
 }
 
+// Konfigurasi koneksi tiap slot CCTV sekunder (CAM-02 s/d CAM-04)
+interface SecondarySlotConfig {
+  mode: "standby" | "usb" | "ip_mjpeg" | "ip_video";
+  deviceId?: string;
+  streamUrl?: string;
+}
+
 // Warna overlay kotak sesuai status
 const STATUS_COLORS: Record<
   PersonStatus,
@@ -63,38 +70,36 @@ const CCTV_CHANNELS = [
     cameraId: "camera-candi-bentar-01",
     label: "CANDI BENTAR UTAMA",
     zone: "Jaba Pisan · Pintu Masuk Utama",
-    mode: "LIVE AI + FACE BLUR",
+    protocol: "USB UVC · ON-DEVICE AI",
   },
   {
     id: "CAM-02",
     cameraId: "camera-kori-agung-02",
     label: "KORI AGUNG TENGAH",
     zone: "Jaba Tengah · Koridor Pengunjung",
-    mode: "WIDE CROP FEED",
+    protocol: "RTSP/WebRTC · HTTP MJPEG · USB",
   },
   {
     id: "CAM-03",
     cameraId: "camera-gerbang-selatan-03",
     label: "GERBANG SELATAN",
     zone: "Akses Pemedek & Wisatawan",
-    mode: "MONOCHROME SILHOUETTE",
+    protocol: "RTSP/WebRTC · HTTP MJPEG · USB",
   },
   {
     id: "CAM-04",
     cameraId: "camera-jaba-sisi-04",
     label: "POS PECALANG TIMUR",
     zone: "Area Peminjaman Kamen/Senteng",
-    mode: "ZOOM TORSO INSPECTOR",
+    protocol: "RTSP/WebRTC · HTTP MJPEG · USB",
   },
 ] as const;
 
 export default function CameraPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  // Refs untuk feed CCTV sekunder (mirror stream real-time)
-  const cam2VideoRef = useRef<HTMLVideoElement | null>(null);
-  const cam3VideoRef = useRef<HTMLVideoElement | null>(null);
-  const cam4VideoRef = useRef<HTMLVideoElement | null>(null);
+  const usbVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const usbStreamsRef = useRef<Record<string, MediaStream | null>>({});
 
   const detectorRef = useRef<ObjectDetector | null>(null);
   const faceDetectorRef = useRef<FaceDetector | null>(null);
@@ -132,8 +137,21 @@ export default function CameraPage() {
   const [faceCount, setFaceCount] = useState<number>(0);
   const [clockStr, setClockStr] = useState<string>("--:--:-- WITA");
 
-  // Layout CCTV: "grid" (2x2) atau fokus ke salah satu channel ("CAM-01", dll.)
+  // Layout CCTV: null = Grid 2x2, atau ID channel ("CAM-01", dll.) untuk 1x1 fokus
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
+
+  // Daftar perangkat kamera USB yang terdeteksi di komputer
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  // Konfigurasi tiap slot kamera sekunder (CAM-02, CAM-03, CAM-04) — default STANDBY (tidak menduplikasi CAM-01!)
+  const [secondarySlots, setSecondarySlots] = useState<Record<string, SecondarySlotConfig>>({
+    "CAM-02": { mode: "standby" },
+    "CAM-03": { mode: "standby" },
+    "CAM-04": { mode: "standby" },
+  });
+  // Modal/form inline pengaturan sumber kamera untuk slot tertentu
+  const [editingSlot, setEditingSlot] = useState<string | null>(null);
+  const [urlInput, setUrlInput] = useState<string>("http://192.168.1.50:8080/video");
+
   // Bukti crop privasi terakhir & log hasil scan di sidebar
   const [latestProof, setLatestProof] = useState<ScanProofItem | null>(null);
   const [scanHistory, setScanHistory] = useState<ScanProofItem[]>([]);
@@ -161,27 +179,76 @@ export default function CameraPage() {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
+    Object.values(usbStreamsRef.current).forEach((s) => {
+      s?.getTracks().forEach((t) => t.stop());
+    });
+    usbStreamsRef.current = {};
     if (animFrameIdRef.current) {
       cancelAnimationFrame(animFrameIdRef.current);
       animFrameIdRef.current = null;
     }
   }, []);
 
-  // Pastikan video sekunder di grid 2x2 selalu mendapat stream yang sama
-  const syncSecondaryVideos = useCallback(() => {
-    const stream = streamRef.current;
-    if (!stream) return;
-    [cam2VideoRef.current, cam3VideoRef.current, cam4VideoRef.current].forEach((v) => {
-      if (v && v.srcObject !== stream) {
-        v.srcObject = stream;
-        v.play().catch(() => {});
-      }
-    });
-  }, []);
+  // Hubungkan slot sekunder ke USB webcam tertentu
+  const connectSlotToUsb = async (slotId: string, deviceId: string) => {
+    try {
+      const oldStream = usbStreamsRef.current[slotId];
+      oldStream?.getTracks().forEach((t) => t.stop());
 
-  useEffect(() => {
-    syncSecondaryVideos();
-  }, [activeChannel, isLoading, syncSecondaryVideos]);
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 360 } },
+        audio: false,
+      });
+      usbStreamsRef.current[slotId] = newStream;
+      setSecondarySlots((prev) => ({
+        ...prev,
+        [slotId]: { mode: "usb", deviceId },
+      }));
+      setEditingSlot(null);
+
+      setTimeout(() => {
+        const videoEl = usbVideoRefs.current[slotId];
+        if (videoEl) {
+          videoEl.srcObject = newStream;
+          videoEl.play().catch(() => {});
+        }
+      }, 100);
+    } catch (err) {
+      alert(
+        `Gagal membuka kamera USB pada ${slotId}: ${
+          err instanceof Error ? err.message : "Perangkat sedang dipakai"
+        }`
+      );
+    }
+  };
+
+  // Hubungkan slot sekunder ke IP Camera (MJPEG / HLS / HTTP Stream)
+  const connectSlotToIpUrl = (slotId: string, url: string) => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    const isVideoFileOrHls =
+      trimmed.endsWith(".m3u8") || trimmed.endsWith(".mp4") || trimmed.endsWith(".webm");
+    setSecondarySlots((prev) => ({
+      ...prev,
+      [slotId]: {
+        mode: isVideoFileOrHls ? "ip_video" : "ip_mjpeg",
+        streamUrl: trimmed,
+      },
+    }));
+    setEditingSlot(null);
+  };
+
+  // Putuskan slot sekunder kembali ke STANDBY
+  const disconnectSlot = (slotId: string) => {
+    const oldStream = usbStreamsRef.current[slotId];
+    oldStream?.getTracks().forEach((t) => t.stop());
+    delete usbStreamsRef.current[slotId];
+    setSecondarySlots((prev) => ({
+      ...prev,
+      [slotId]: { mode: "standby" },
+    }));
+    setEditingSlot(null);
+  };
 
   // Kirim crop yang sudah di-blur wajahnya ke /api/scan
   const scanPerson = useCallback(
@@ -289,7 +356,7 @@ export default function CameraPage() {
     }
   }, [scanPerson]);
 
-  // Inisialisasi model MediaPipe (ObjectDetector + FaceDetector) dan kamera
+  // Inisialisasi model MediaPipe (ObjectDetector + FaceDetector) dan kamera utama
   const startCamera = useCallback(async () => {
     stopStream();
     setIsLoading(true);
@@ -321,6 +388,10 @@ export default function CameraPage() {
 
       streamRef.current = stream;
 
+      // Dapatkan daftar semua kamera USB/lokal yang terpasang
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setVideoDevices(devices.filter((d) => d.kind === "videoinput"));
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
@@ -328,7 +399,6 @@ export default function CameraPage() {
             videoRef.current.play().catch((err) => {
               console.error("Gagal memutar stream video:", err);
             });
-            syncSecondaryVideos();
             setIsLoading(false);
           }
         };
@@ -356,7 +426,7 @@ export default function CameraPage() {
       const msg = err instanceof Error ? err.message : "Gagal memuat kamera atau model deteksi.";
       setErrorMessage(msg);
     }
-  }, [stopStream, syncSecondaryVideos]);
+  }, [stopStream]);
 
   // Gambar overlay: pixelate wajah asli + kotak status + alasan pelanggaran
   const drawOverlay = useCallback(
@@ -373,7 +443,6 @@ export default function CameraPage() {
       // 1. BLUR / PIXELATE SEMUA WAJAH DARI FACEDETECTOR SECARA LANGSUNG DI ATAS VIDEO
       const blurredPersonIds = new Set<number>();
       for (const face of faceBoxes) {
-        // Perbesar sedikit kotak wajah (25%) agar seluruh kepala & dahi tertutup mozaik
         const padX = face.width * 0.25;
         const padY = face.height * 0.28;
         const fx = Math.max(0, Math.round(face.originX - padX));
@@ -383,7 +452,6 @@ export default function CameraPage() {
 
         pixelateRegionOnCanvas(ctx, video, fx, fy, fw, fh, fx, fy, fw, fh, 14);
 
-        // Bingkai tipis tanda sensor privasi aktif pada wajah
         ctx.save();
         ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
         ctx.lineWidth = 1;
@@ -397,7 +465,6 @@ export default function CameraPage() {
         ctx.fillText("FACE BLURRED", fx + 5, fy + 11);
         ctx.restore();
 
-        // Tandai person yang kepalanya sudah ter-blur oleh FaceDetector
         for (const p of trackedPersons) {
           const cx = face.originX + face.width / 2;
           const cy = face.originY + face.height / 2;
@@ -421,8 +488,7 @@ export default function CameraPage() {
         const colors = STATUS_COLORS[status];
         const icon = STATUS_ICON[status];
 
-        // Fallback: jika FaceDetector belum menangkap wajah untuk person ini (misal menunduk/menyamping),
-        // tetap pixelate 28% bagian atas kotak badan!
+        // Fallback: jika FaceDetector belum menangkap wajah untuk person ini, tetap pixelate 28% atas
         if (!blurredPersonIds.has(person.id)) {
           const headH = Math.round(height * 0.28);
           if (headH > 8) {
@@ -451,7 +517,6 @@ export default function CameraPage() {
         ctx.stroke();
         ctx.fill();
 
-        // Teks badge utama di atas kotak
         const statusText =
           status === "pending"
             ? "Menganalisis busana..."
@@ -480,7 +545,6 @@ export default function CameraPage() {
         ctx.fillStyle = colors.text;
         ctx.fillText(label, originX + padX, badgeY + 15);
 
-        // Tampilkan alasan pelanggaran / observasi di bagian bawah/dalam kotak
         if (trackInfo?.reasons && trackInfo.reasons.length > 0) {
           const primaryReason = trackInfo.reasons[0];
           ctx.font = "500 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
@@ -528,7 +592,7 @@ export default function CameraPage() {
             const vw = video.videoWidth;
             const vh = video.videoHeight;
 
-            // A. Deteksi Wajah (FaceDetector) untuk akurasi Face Blur 100%
+            // A. Deteksi Wajah (FaceDetector)
             const faceBoxes: BoundingBox[] = [];
             if (faceDetector) {
               const faceResult = faceDetector.detectForVideo(video, timestamp);
@@ -566,9 +630,7 @@ export default function CameraPage() {
                 };
               });
 
-            // C. Fallback Pintar untuk Webcam Close-up:
-            // Jika ada wajah terdeteksi (mis. orang duduk dekat webcam), tapi ObjectDetector
-            // belum menangkap kotak "person" penuh, buat kotak tubuh bagian atas otomatis dari posisi wajah!
+            // C. Fallback Pintar untuk Webcam Close-up
             for (const face of faceBoxes) {
               const faceCenterX = face.originX + face.width / 2;
               const faceCenterY = face.originY + face.height / 2;
@@ -600,7 +662,7 @@ export default function CameraPage() {
             const activeTracks = trackerRef.current.update(personBoxes);
             latestTracksRef.current = activeTracks;
 
-            // D. Cek setiap orang untuk Scan Awal & Auto Re-Scan setiap 5 detik
+            // D. Auto Re-Scan setiap 5 detik
             const nowMs = Date.now();
             for (const person of activeTracks) {
               const id = person.id;
@@ -760,7 +822,7 @@ export default function CameraPage() {
                 <div className="flex items-center gap-2">
                   <span className="inline-block h-2 w-2 bg-red-600 animate-pulse" />
                   <span className="font-bold text-zinc-950">CAM-01 · CANDI BENTAR UTAMA</span>
-                  <span className="hidden sm:inline text-zinc-500">[AI VISION + FACE BLUR]</span>
+                  <span className="hidden sm:inline text-emerald-700 font-semibold">[LIVE AI]</span>
                 </div>
                 <button
                   type="button"
@@ -828,105 +890,167 @@ export default function CameraPage() {
               </div>
             </div>
 
-            {/* ── CHANNEL 2: KORI AGUNG TENGAH (WIDE / UPPER GATE FEED) ── */}
-            <div
-              onClick={() => setActiveChannel(activeChannel === "CAM-02" ? null : "CAM-02")}
-              className={`relative bg-zinc-950 border border-zinc-300 hover:border-zinc-900 cursor-pointer overflow-hidden flex flex-col justify-between aspect-video ${
-                !isGridMode && activeChannel !== "CAM-02" ? "hidden" : ""
-              }`}
-            >
-              <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-3 py-1.5 bg-white/95 border-b border-zinc-200 font-mono text-[11px]">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-2 w-2 bg-emerald-600" />
-                  <span className="font-bold text-zinc-950">CAM-02 · KORI AGUNG TENGAH</span>
+            {/* ── CHANNELS 2, 3, 4: SLOT CCTV INDEPENDEN (STANDBY / USB / IP CAMERA) ── */}
+            {CCTV_CHANNELS.slice(1).map((ch) => {
+              const slot = secondarySlots[ch.id] ?? { mode: "standby" };
+              const isEditing = editingSlot === ch.id;
+
+              return (
+                <div
+                  key={ch.id}
+                  className={`relative bg-zinc-950 border border-zinc-300 overflow-hidden flex flex-col justify-between aspect-video ${
+                    !isGridMode && activeChannel !== ch.id ? "hidden" : ""
+                  }`}
+                >
+                  {/* Header Bar Slot */}
+                  <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-3 py-1.5 bg-white/95 border-b border-zinc-200 font-mono text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-block h-2 w-2 ${
+                          slot.mode === "standby" ? "bg-zinc-400" : "bg-emerald-600 animate-pulse"
+                        }`}
+                      />
+                      <span className="font-bold text-zinc-950">
+                        {ch.id} · {ch.label}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {slot.mode !== "standby" && (
+                        <button
+                          type="button"
+                          onClick={() => disconnectSlot(ch.id)}
+                          className="text-[10px] uppercase border border-rose-300 text-rose-700 px-1.5 py-0.5 bg-white hover:bg-rose-600 hover:text-white"
+                        >
+                          Putuskan
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveChannel(activeChannel === ch.id ? null : ch.id)
+                        }
+                        className="text-[10px] uppercase border border-zinc-300 px-1.5 py-0.5 bg-white hover:bg-zinc-950 hover:text-white transition-colors"
+                      >
+                        {activeChannel === ch.id ? "⊡ 2x2" : "⛶"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Isi Tengah Slot: Standby vs Konektor vs Active Stream */}
+                  <div className="relative w-full h-full flex items-center justify-center pt-7">
+                    {isEditing ? (
+                      <div className="w-full h-full bg-white p-4 flex flex-col justify-center gap-2.5 font-mono text-xs z-20">
+                        <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5">
+                          <span className="font-bold text-zinc-950 uppercase">
+                            Hubungkan {ch.id} ({ch.label})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setEditingSlot(null)}
+                            className="text-zinc-500 hover:text-zinc-950"
+                          >
+                            ✕ Tutup
+                          </button>
+                        </div>
+
+                        {/* Opsi 1: Pilih Perangkat Kamera USB */}
+                        <div>
+                          <p className="text-[10px] uppercase text-zinc-500 mb-1">
+                            1. Pilih Kamera USB / Capture Card (UVC):
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {videoDevices.map((dev, idx) => (
+                              <button
+                                key={dev.deviceId || idx}
+                                type="button"
+                                onClick={() => connectSlotToUsb(ch.id, dev.deviceId)}
+                                className="border border-zinc-900 bg-zinc-50 hover:bg-zinc-950 hover:text-white px-2 py-1 text-[10px] truncate max-w-[210px]"
+                              >
+                                📷 {dev.label || `Kamera USB #${idx + 1}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Opsi 2: Masukkan URL Stream IP Camera / HP IP Webcam / Gateway RTSP */}
+                        <div>
+                          <p className="text-[10px] uppercase text-zinc-500 mb-1">
+                            2. URL Stream IP CCTV / HP IP Webcam (MJPEG / HLS .m3u8 / WebRTC):
+                          </p>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              value={urlInput}
+                              onChange={(e) => setUrlInput(e.target.value)}
+                              placeholder="http://192.168.1.50:8080/video"
+                              className="flex-1 border border-zinc-300 px-2 py-1 text-[11px] text-zinc-900 focus:outline-none focus:border-zinc-900"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => connectSlotToIpUrl(ch.id, urlInput)}
+                              className="border border-zinc-900 bg-zinc-950 text-white px-3 py-1 text-[10px] uppercase hover:bg-white hover:text-zinc-950"
+                            >
+                              Sambungkan
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : slot.mode === "standby" ? (
+                      <div className="flex flex-col items-center justify-center text-center p-4 font-mono">
+                        <div className="text-[11px] tracking-widest uppercase text-zinc-400 mb-1">
+                          [ STANDBY · BELUM ADA KAMERA TERHUBUNG ]
+                        </div>
+                        <div className="text-[10px] text-zinc-500 mb-3">
+                          {ch.zone} · Protokol: {ch.protocol}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingSlot(ch.id)}
+                          className="border border-zinc-500 bg-zinc-900 text-white hover:bg-white hover:text-zinc-950 px-3 py-1.5 text-[11px] uppercase tracking-wider transition-colors"
+                        >
+                          + Hubungkan Kamera / IP CCTV
+                        </button>
+                      </div>
+                    ) : slot.mode === "usb" ? (
+                      <video
+                        ref={(el) => {
+                          usbVideoRefs.current[ch.id] = el;
+                        }}
+                        playsInline
+                        muted
+                        className="w-full h-full object-contain"
+                      />
+                    ) : slot.mode === "ip_mjpeg" ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={slot.streamUrl}
+                        alt={`Stream IP CCTV ${ch.id}`}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <video
+                        src={slot.streamUrl}
+                        autoPlay
+                        playsInline
+                        muted
+                        controls
+                        className="w-full h-full object-contain"
+                      />
+                    )}
+                  </div>
+
+                  {/* Footer Bar Slot */}
+                  <div className="absolute bottom-2 left-2 right-2 z-10 flex items-center justify-between font-mono text-[10px] pointer-events-none">
+                    <span className="bg-white/90 border border-zinc-300 px-2 py-0.5 text-zinc-900">
+                      {ch.zone}
+                    </span>
+                    <span className="bg-zinc-950/85 text-white px-2 py-0.5 uppercase">
+                      {slot.mode === "standby" ? "NO SIGNAL" : `ONLINE (${slot.mode.toUpperCase()})`}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-[10px] text-zinc-500">KORIDOR UTAMA</span>
-              </div>
-
-              <div className="relative w-full h-full overflow-hidden pt-7">
-                <video
-                  ref={cam2VideoRef}
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover scale-110 contrast-110"
-                />
-                {/* Crosshair Grid CCTV */}
-                <div className="absolute inset-0 pointer-events-none border border-white/10 flex items-center justify-center">
-                  <div className="w-24 h-24 border border-white/30" />
-                </div>
-              </div>
-
-              <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center justify-between font-mono text-[10px] pointer-events-none">
-                <span className="bg-white/90 border border-zinc-300 px-2 py-0.5 text-zinc-900">
-                  ZONA 02 · JABA TENGAH
-                </span>
-                <span className="bg-zinc-950/85 text-white px-2 py-0.5">{clockStr}</span>
-              </div>
-            </div>
-
-            {/* ── CHANNEL 3: GERBANG SELATAN (HIGH-CONTRAST MONOCHROME FEED) ── */}
-            <div
-              onClick={() => setActiveChannel(activeChannel === "CAM-03" ? null : "CAM-03")}
-              className={`relative bg-zinc-950 border border-zinc-300 hover:border-zinc-900 cursor-pointer overflow-hidden flex flex-col justify-between aspect-video ${
-                !isGridMode && activeChannel !== "CAM-03" ? "hidden" : ""
-              }`}
-            >
-              <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-3 py-1.5 bg-white/95 border-b border-zinc-200 font-mono text-[11px]">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-2 w-2 bg-emerald-600" />
-                  <span className="font-bold text-zinc-950">CAM-03 · GERBANG SELATAN</span>
-                </div>
-                <span className="text-[10px] text-zinc-500">IR / SILUET KAIN</span>
-              </div>
-
-              <div className="relative w-full h-full overflow-hidden pt-7">
-                <video
-                  ref={cam3VideoRef}
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover grayscale contrast-125"
-                />
-              </div>
-
-              <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center justify-between font-mono text-[10px] pointer-events-none">
-                <span className="bg-white/90 border border-zinc-300 px-2 py-0.5 text-zinc-900">
-                  MODE: MONOKROM KONTRAS TINGGI
-                </span>
-                <span className="bg-zinc-950/85 text-white px-2 py-0.5">AKTIF</span>
-              </div>
-            </div>
-
-            {/* ── CHANNEL 4: POS PECALANG TIMUR (TORSO / GARMENT FOCUS FEED) ── */}
-            <div
-              onClick={() => setActiveChannel(activeChannel === "CAM-04" ? null : "CAM-04")}
-              className={`relative bg-zinc-950 border border-zinc-300 hover:border-zinc-900 cursor-pointer overflow-hidden flex flex-col justify-between aspect-video ${
-                !isGridMode && activeChannel !== "CAM-04" ? "hidden" : ""
-              }`}
-            >
-              <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-3 py-1.5 bg-white/95 border-b border-zinc-200 font-mono text-[11px]">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-2 w-2 bg-emerald-600" />
-                  <span className="font-bold text-zinc-950">CAM-04 · POS PECALANG TIMUR</span>
-                </div>
-                <span className="text-[10px] text-zinc-500">FOKUS BUSANA</span>
-              </div>
-
-              <div className="relative w-full h-full overflow-hidden pt-7">
-                <video
-                  ref={cam4VideoRef}
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover scale-125 origin-bottom"
-                />
-              </div>
-
-              <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center justify-between font-mono text-[10px] pointer-events-none">
-                <span className="bg-white/90 border border-zinc-300 px-2 py-0.5 text-zinc-900">
-                  AREA PEMINJAMAN KAMEN
-                </span>
-                <span className="bg-zinc-950/85 text-white px-2 py-0.5">SIAGA</span>
-              </div>
-            </div>
+              );
+            })}
           </div>
 
           {/* Bar Legenda Status di bawah Grid CCTV */}
@@ -947,7 +1071,7 @@ export default function CameraPage() {
               </span>
             </div>
             <span className="text-[11px] text-zinc-500">
-              Klik salah satu kotak kamera untuk memperbesar (1x1)
+              Mendukung USB Webcam (UVC), IP Camera (HTTP MJPEG / HLS), &amp; RTSP-to-WebRTC Gateway
             </span>
           </div>
         </section>
