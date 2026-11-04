@@ -21,7 +21,10 @@ import { applyRules } from "@/lib/rules";
 import { db } from "@/lib/db";
 import { events, temples, cameras } from "@/lib/db/schema";
 import { broadcastDetection } from "@/lib/events";
-import { eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
+
+// Batas maksimal log per pura agar database tidak pernah membengkak/berat
+const MAX_EVENTS_PER_TEMPLE = 100;
 
 // ──────────────────────────────────────────────
 // Zod: validasi body request
@@ -170,6 +173,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       officerId: null,
       ts: new Date(),
     });
+
+    // Auto-Prune: Jaga maksimal 100 log terbaru per pura agar DB tetap ringan
+    const oldEvents = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(eq(events.templeId, resolvedTempleId))
+      .orderBy(desc(events.ts))
+      .offset(MAX_EVENTS_PER_TEMPLE);
+
+    if (oldEvents.length > 0) {
+      await db.delete(events).where(
+        inArray(
+          events.id,
+          oldEvents.map((e) => e.id)
+        )
+      );
+    }
   } catch (dbErr) {
     console.error("[scan] Gagal menyimpan event ke DB:", dbErr);
   }

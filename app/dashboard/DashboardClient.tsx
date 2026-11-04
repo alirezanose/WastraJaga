@@ -424,11 +424,19 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                       <span>Keyakinan: {(item.confidence * 100).toFixed(0)}%</span>
                       <span>&bull;</span>
                       <span>
+                        {new Date(item.ts).toLocaleDateString("id-ID", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}{" "}
+                        &middot;{" "}
                         {new Date(item.ts).toLocaleTimeString("id-ID", {
                           hour: "2-digit",
                           minute: "2-digit",
                           second: "2-digit",
-                        })}
+                          hour12: false,
+                        })}{" "}
+                        WITA
                       </span>
                     </div>
                   </div>

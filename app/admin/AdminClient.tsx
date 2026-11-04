@@ -28,6 +28,55 @@ export default function AdminClient({
 }: AdminClientProps) {
   const [activeTab, setActiveTab] = useState<"rules" | "cameras" | "audit">("rules");
   const [rulesList, setRulesList] = useState<Rule[]>(initialRules);
+  const [eventsList, setEventsList] = useState<DashboardEvent[]>(initialEvents);
+  const [isClearingLogs, setIsClearingLogs] = useState(false);
+
+  // Format Tanggal + Jam lengkap (WITA)
+  const formatDateTime = (iso: string) => {
+    const d = new Date(iso);
+    const datePart = d.toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+    const timePart = d.toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    return `${datePart} · ${timePart} WITA`;
+  };
+
+  // Handler bersihkan semua log audit
+  const handleClearAllLogs = async () => {
+    if (!confirm("Bersihkan seluruh riwayat log audit pada pura ini?")) return;
+    setIsClearingLogs(true);
+    try {
+      const res = await fetch(`/api/admin/logs?templeId=${temple.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Gagal membersihkan log");
+      setEventsList([]);
+    } catch {
+      alert("Terjadi kesalahan saat membersihkan log audit.");
+    } finally {
+      setIsClearingLogs(false);
+    }
+  };
+
+  // Handler hapus 1 baris log audit
+  const handleDeleteSingleLog = async (eventId: string) => {
+    try {
+      const res = await fetch(`/api/admin/logs?id=${eventId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Gagal menghapus log");
+      setEventsList((prev) => prev.filter((ev) => ev.id !== eventId));
+    } catch {
+      alert("Gagal menghapus baris log.");
+    }
+  };
 
   // Form tambah aturan
   const [newAttribute, setNewAttribute] = useState("lower_garment");
@@ -340,17 +389,19 @@ export default function AdminClient({
               </div>
             </div>
 
-            {/* Kotak Panduan Integrasi Kamera */}
-            <div className="border border-zinc-200 p-5 space-y-2 bg-zinc-50/20 text-xs font-mono text-zinc-700">
-              <div className="font-semibold text-zinc-900 uppercase">
-                Petunjuk Teknis Laptop Pintu Masuk:
+            {/* Kotak Penjelasan Mudah: Apa fungsi Kamera & Token API? */}
+            <div className="border border-zinc-200 p-5 space-y-3 bg-zinc-50/40 text-xs font-mono text-zinc-700">
+              <div className="font-semibold text-zinc-950 uppercase tracking-wider">
+                💡 Cara Kerja Kamera Gerbang &amp; Token API (Otomatis):
               </div>
-              <p>
-                Kamera fixed di pintu masuk berjalan di browser client secara standalone. Untuk menghubungkan kamera ke API `/api/scan`, pastikan token kamera diset pada file <code>.env</code>:
+              <p className="leading-relaxed">
+                1. <strong>Kenapa ada Token Kamera?</strong> Perangkat kamera/CCTV di gerbang pura berjalan 24 jam tanpa login akun email/password. Sebagai gantinya, kamera memakai &quot;PIN Mesin&quot; (<code>CAMERA_API_TOKEN</code>) agar orang luar tidak bisa mengirim data palsu ke server.
               </p>
-              <pre className="p-3 bg-white border border-zinc-200 text-zinc-950 overflow-x-auto">
-                CAMERA_API_TOKEN=dev-camera-token-12345{"\n"}
-                NEXT_PUBLIC_CAMERA_API_TOKEN=dev-camera-token-12345
+              <p className="leading-relaxed">
+                2. <strong>Apakah perlu diatur manual saat membuka halaman Kamera?</strong> <strong>Tidak perlu!</strong> Halaman <code>/camera</code> sudah otomatis mengirimkan token tersebut di balik layar setiap kali memindai pengunjung.
+              </p>
+              <pre className="p-3 bg-white border border-zinc-200 text-zinc-950 overflow-x-auto text-[11px]">
+                Header Otomatis: x-camera-token: dev-camera-token-12345 (Terhubung ✓)
               </pre>
             </div>
           </div>
@@ -359,49 +410,64 @@ export default function AdminClient({
         {/* ── TAB 3: AUDIT LOG RIWAYAT DETEKSI ─────────────────────── */}
         {activeTab === "audit" && (
           <div className="space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm uppercase font-mono tracking-wider text-zinc-700">
-                Log Audit Pemeriksaan (Zero Raw Image Storage)
-              </h2>
-              <span className="text-xs font-mono text-zinc-500">
-                Privasi: Hanya menyimpan metadata kepatuhan
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm uppercase font-mono tracking-wider text-zinc-900 font-semibold">
+                  Log Audit Pemeriksaan ({eventsList.length} / Maks. 100 Log)
+                </h2>
+                <p className="text-xs font-mono text-zinc-500 mt-0.5">
+                  Privasi UU PDP: 0% penyimpanan foto di database &bull; Log di atas 100 otomatis dihapus agar database tetap ringan
+                </p>
+              </div>
+
+              {eventsList.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllLogs}
+                  disabled={isClearingLogs}
+                  className="border border-rose-600 bg-white text-rose-700 hover:bg-rose-600 hover:text-white px-3 py-1.5 text-xs font-mono uppercase tracking-wider transition-colors disabled:opacity-50"
+                >
+                  {isClearingLogs ? "Menghapus..." : "🗑 Bersihkan Semua Log"}
+                </button>
+              )}
             </div>
 
             <div className="border border-zinc-200 overflow-x-auto">
               <table className="w-full text-left text-xs font-mono">
                 <thead className="bg-zinc-50 border-b border-zinc-200 text-zinc-500 uppercase tracking-wider">
                   <tr>
-                    <th className="p-3">Waktu</th>
-                    <th className="p-3">ID Track</th>
+                    <th className="p-3">Tanggal &amp; Waktu (WITA)</th>
+                    <th className="p-3">Kamera &amp; ID</th>
                     <th className="p-3">Status Deteksi</th>
                     <th className="p-3">Alasan / Temuan</th>
                     <th className="p-3">Tindakan Pecalang</th>
+                    <th className="p-3 text-right">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {initialEvents.length === 0 ? (
+                  {eventsList.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-zinc-400">
+                      <td colSpan={6} className="p-8 text-center text-zinc-400">
                         Belum ada riwayat deteksi yang tercatat di database.
                       </td>
                     </tr>
                   ) : (
-                    initialEvents.map((ev) => (
+                    eventsList.map((ev) => (
                       <tr key={ev.id} className="hover:bg-zinc-50/50">
-                        <td className="p-3 text-zinc-500 whitespace-nowrap">
-                          {new Date(ev.ts).toLocaleTimeString("id-ID", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
+                        <td className="p-3 text-zinc-600 whitespace-nowrap">
+                          {formatDateTime(ev.ts)}
                         </td>
-                        <td className="p-3 font-semibold text-zinc-900">#{ev.trackId}</td>
+                        <td className="p-3 font-semibold text-zinc-900 whitespace-nowrap">
+                          #{ev.trackId}{" "}
+                          <span className="text-zinc-400 font-normal">
+                            ({ev.cameraLabel || "Candi Bentar"})
+                          </span>
+                        </td>
                         <td className="p-3">
                           <span
-                            className={`px-2 py-0.5 border ${
+                            className={`px-2 py-0.5 border uppercase text-[11px] ${
                               ev.status === "violation"
-                                ? "bg-red-50 text-red-800 border-red-200"
+                                ? "bg-red-50 text-red-800 border-red-200 font-semibold"
                                 : ev.status === "uncertain"
                                 ? "bg-amber-50 text-amber-800 border-amber-200"
                                 : "bg-emerald-50 text-emerald-800 border-emerald-200"
@@ -413,7 +479,7 @@ export default function AdminClient({
                         <td className="p-3 text-zinc-700">
                           {ev.reasons.length > 0 ? ev.reasons.join(", ") : "Busana adat lengkap"}
                         </td>
-                        <td className="p-3">
+                        <td className="p-3 whitespace-nowrap">
                           {ev.officerAction ? (
                             <span className="text-zinc-900 font-semibold">
                               {ev.officerAction}{" "}
@@ -422,6 +488,16 @@ export default function AdminClient({
                           ) : (
                             <span className="text-zinc-400 italic">Belum ditindak</span>
                           )}
+                        </td>
+                        <td className="p-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSingleLog(ev.id)}
+                            className="text-zinc-400 hover:text-rose-600 transition-colors"
+                            title="Hapus baris log ini"
+                          >
+                            Hapus
+                          </button>
                         </td>
                       </tr>
                     ))

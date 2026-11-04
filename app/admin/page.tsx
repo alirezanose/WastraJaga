@@ -77,7 +77,7 @@ export default async function AdminPage() {
     .leftJoin(users, eq(events.officerId, users.id))
     .where(eq(events.templeId, templeRecord.id))
     .orderBy(desc(events.ts))
-    .limit(30);
+    .limit(100);
 
   const formattedEvents = rawEvents.map((r) => ({
     id: r.id,
