@@ -6,7 +6,8 @@ import { getObjectDetector, getFaceDetector, type Detection } from "@/lib/detect
 import { ObjectTracker, type TrackedPerson, type BoundingBox } from "@/lib/tracker";
 import { cropAndBlurHead, pixelateRegionOnCanvas } from "@/lib/crop";
 import type { ObjectDetector, FaceDetector } from "@mediapipe/tasks-vision";
-import type { LLMOutput } from "@/lib/llm/schema";
+import { LLMOutputSchema, type LLMOutput } from "@/lib/llm/schema";
+import { SYSTEM_PROMPT, buildUserMessage } from "@/lib/llm/prompt";
 
 // Status busana yang mungkin (sesuai AGENTS.md)
 type PersonStatus = "pending" | "ok" | "violation" | "uncertain" | "error";
@@ -314,6 +315,13 @@ export default function CameraPage() {
   };
 
   // Kirim crop yang sudah di-blur wajahnya ke /api/scan (mendukung CAM-01 s/d CAM-04)
+  const edgeGeminiConfigRef = useRef<{
+    loaded: boolean;
+    provider: string;
+    geminiKey: string;
+    model: string;
+  } | null>(null);
+
   const scanPerson = useCallback(
     async (
       trackId: number,
@@ -327,6 +335,7 @@ export default function CameraPage() {
 
       activeScanRef.current.add(trackId);
       lastScanTimeRef.current.set(trackId, Date.now());
+      const scanStartMs = Date.now();
 
       // 1. Buat crop + pixelate wajah di browser (privasi 100% on-device)
       const croppedDataUrl = cropAndBlurHead(
@@ -345,6 +354,70 @@ export default function CameraPage() {
         process.env.NEXT_PUBLIC_CAMERA_API_TOKEN || DEFAULT_CAMERA_TOKEN;
 
       try {
+        // Ambil konfigurasi Gemini sekali dari server terautentikasi (untuk menghindari geo-block IP VPS Hong Kong)
+        if (!edgeGeminiConfigRef.current) {
+          try {
+            const cfgRes = await fetch("/api/scan", {
+              method: "GET",
+              headers: { "x-camera-token": cameraToken },
+            });
+            if (cfgRes.ok) {
+              const cfg = (await cfgRes.json()) as {
+                provider: string;
+                geminiKey: string;
+                model: string;
+              };
+              edgeGeminiConfigRef.current = { loaded: true, ...cfg };
+            }
+          } catch {
+            // abaikan jika gagal, lanjut ke server-side
+          }
+        }
+
+        // Jika provider = gemini, panggil Gemini Vision dari jaringan lokal browser (Indonesia) agar tidak terkena geo-block VPS HK
+        let clientAttributes: LLMOutput | undefined = undefined;
+        const cfg = edgeGeminiConfigRef.current;
+        if (cfg && cfg.provider === "gemini" && cfg.geminiKey) {
+          const candidateModels = [cfg.model || "gemini-3.5-flash-lite", "gemini-flash-lite-latest"];
+          for (const modelName of candidateModels) {
+            try {
+              const geminiRes = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${cfg.geminiKey}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+                    contents: [
+                      {
+                        parts: [
+                          { text: buildUserMessage() },
+                          { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+                        ],
+                      },
+                    ],
+                  }),
+                }
+              );
+              if (geminiRes.ok) {
+                const geminiJson = (await geminiRes.json()) as {
+                  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+                };
+                const rawText =
+                  geminiJson.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+                const cleaned = rawText
+                  .replace(/^```(?:json)?\s*/i, "")
+                  .replace(/\s*```\s*$/, "")
+                  .trim();
+                clientAttributes = LLMOutputSchema.parse(JSON.parse(cleaned));
+                break;
+              }
+            } catch {
+              // coba model kandidat berikutnya
+            }
+          }
+        }
+
         const res = await fetch("/api/scan", {
           method: "POST",
           headers: {
@@ -356,9 +429,11 @@ export default function CameraPage() {
             camera_id: "camera-candi-bentar-01",
             track_id: trackId,
             image: imageBase64,
+            ...(clientAttributes ? { client_attributes: clientAttributes } : {}),
           }),
         });
 
+        const totalLatencyMs = Date.now() - scanStartMs;
         const nowTime = new Date().toLocaleTimeString("id-ID", {
           hour: "2-digit",
           minute: "2-digit",
@@ -380,11 +455,13 @@ export default function CameraPage() {
             attributes?: LLMOutput;
           };
 
+          const reportedLatency = clientAttributes ? totalLatencyMs : data.latency_ms;
+
           trackStatusRef.current.set(trackId, {
             status: data.status,
             reasons: data.reasons,
             confidence: data.confidence,
-            latencyMs: data.latency_ms,
+            latencyMs: reportedLatency,
             attributes: data.attributes,
             updatedAt: nowTime,
           });
@@ -396,7 +473,7 @@ export default function CameraPage() {
             status: data.status,
             reasons: data.reasons,
             confidence: data.confidence,
-            latencyMs: data.latency_ms,
+            latencyMs: reportedLatency,
             croppedDataUrl,
             attributes: data.attributes,
           };

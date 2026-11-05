@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeBusana } from "@/lib/llm/adapter";
+import { LLMOutputSchema } from "@/lib/llm/schema";
 import { applyRules } from "@/lib/rules";
 import { db } from "@/lib/db";
 import { events, temples, cameras } from "@/lib/db/schema";
@@ -39,6 +40,8 @@ const ScanRequestSchema = z.object({
     .min(100)
     // Base64 150KB ≈ 204800 karakter; kami tolak lebih besar dari itu
     .max(204800, "Ukuran gambar melebihi batas 150KB"),
+  /** Opsional: atribut hasil Gemini Vision langsung dari edge browser (jika VPS terkena geo-block) */
+  client_attributes: LLMOutputSchema.optional(),
 });
 
 type ScanRequest = z.infer<typeof ScanRequestSchema>;
@@ -67,6 +70,24 @@ function checkRateLimit(cameraId: string): boolean {
 
   entry.count += 1;
   return true;
+}
+
+// ──────────────────────────────────────────────
+// GET /api/scan — Konfigurasi Edge Vision untuk perangkat kamera terautentikasi
+// ──────────────────────────────────────────────
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const expectedToken = process.env.CAMERA_API_TOKEN || "dev-camera-token-12345";
+  const providedToken = req.headers.get("x-camera-token");
+
+  if (expectedToken && providedToken !== expectedToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  return NextResponse.json({
+    provider: (process.env.LLM_PROVIDER ?? "mock").toLowerCase(),
+    geminiKey: process.env.GEMINI_API_KEY ?? "",
+    model: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+  });
 }
 
 // ──────────────────────────────────────────────
@@ -113,8 +134,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── 4. Analisis LLM ───────────────────────────────────────────────────────
-  // Gambar hanya ada di memori — tidak ditulis ke disk
-  const llmOutput = await analyzeBusana(body.image);
+  // Gambar hanya ada di memori — tidak ditulis ke disk.
+  // Jika browser sudah mengekstrak atribut Gemini (karena IP VPS kena geo-block HK), gunakan hasil validasi Zod tersebut.
+  const llmOutput = body.client_attributes
+    ? LLMOutputSchema.parse(body.client_attributes)
+    : await analyzeBusana(body.image);
 
   // ── 5. Rule engine → verdict ──────────────────────────────────────────────
   const verdict = applyRules(llmOutput);

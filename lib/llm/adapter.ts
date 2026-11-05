@@ -57,7 +57,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 // ──────────────────────────────────────────────
 // Helper: parse JSON LLM output dengan validasi Zod
 // ──────────────────────────────────────────────
-function parseAndValidate(raw: string): LLMOutput {
+export function parseAndValidate(raw: string): LLMOutput {
   // Bersihkan markdown code fence jika ada
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
   const parsed = JSON.parse(cleaned);
@@ -113,9 +113,14 @@ async function geminiAnalyze(imageBase64: string): Promise<LLMOutput> {
       return parseAndValidate(text);
     } catch (err) {
       lastError = err;
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.warn(
-        `[LLM adapter] Model Gemini "${modelName}" gagal (${err instanceof Error ? err.message.slice(0, 80) : "error"}), mencoba kandidat berikutnya...`
+        `[LLM adapter] Model Gemini "${modelName}" gagal (${errMsg.slice(0, 80)}), mencoba kandidat berikutnya...`
       );
+      // Jika IP server terkena geo-block (mis. VPS Hong Kong), hentikan loop lebih awal
+      if (errMsg.includes("User location is not supported")) {
+        break;
+      }
     }
   }
 
