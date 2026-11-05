@@ -121,7 +121,7 @@ Sistem menerapkan arsitektur **Hybrid Two-Stage AI** agar hemat bandwidth, cepat
 
 ```bash
 # 1. Clone repository
-git clone <URL_REPO_GITHUB_ANDA>
+git clone https://github.com/alirezanose/WastraJaga
 cd bali-contest
 
 # 2. Salin konfigurasi environment contoh
