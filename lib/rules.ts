@@ -46,6 +46,11 @@ export function applyRules(attrs: LLMOutput): Verdict {
     if (!ub.shoulders_covered) {
       hasViolation = true;
       violationReasons.push("perlu dicek: bahu terbuka / tidak berbaju atasan");
+    } else if (!attrs.full_body_visible) {
+      hasUncertain = true;
+      uncertainReasons.push(
+        "pakaian atas sesuai (bahu tertutup) — tubuh tidak terlihat penuh untuk cek kain bawah"
+      );
     }
   } else {
     hasUncertain = true;

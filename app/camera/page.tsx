@@ -21,6 +21,7 @@ interface TrackStatus {
 }
 
 interface ScanProofItem {
+  channelId: string;
   trackId: number;
   timestamp: string;
   status: PersonStatus;
@@ -99,7 +100,10 @@ export default function CameraPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const usbVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const usbCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
   const usbStreamsRef = useRef<Record<string, MediaStream | null>>({});
+  const usbTrackersRef = useRef<Record<string, ObjectTracker>>({});
+  const lastMpTimestampRef = useRef<number>(0);
 
   const detectorRef = useRef<ObjectDetector | null>(null);
   const faceDetectorRef = useRef<FaceDetector | null>(null);
@@ -142,8 +146,14 @@ export default function CameraPage() {
 
   // Daftar perangkat kamera USB yang terdeteksi di komputer
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [primaryDeviceIdx, setPrimaryDeviceIdx] = useState<number>(0);
   // Konfigurasi tiap slot kamera sekunder (CAM-02, CAM-03, CAM-04) — default STANDBY (tidak menduplikasi CAM-01!)
   const [secondarySlots, setSecondarySlots] = useState<Record<string, SecondarySlotConfig>>({
+    "CAM-02": { mode: "standby" },
+    "CAM-03": { mode: "standby" },
+    "CAM-04": { mode: "standby" },
+  });
+  const secondarySlotsRef = useRef<Record<string, SecondarySlotConfig>>({
     "CAM-02": { mode: "standby" },
     "CAM-03": { mode: "standby" },
     "CAM-04": { mode: "standby" },
@@ -189,6 +199,41 @@ export default function CameraPage() {
     }
   }, []);
 
+  // Ganti kamera utama pada CAM-01 jika ada >1 webcam USB
+  const switchPrimaryCamera = async () => {
+    if (videoDevices.length < 2) return;
+    const nextIdx = (primaryDeviceIdx + 1) % videoDevices.length;
+    const targetDevice = videoDevices[nextIdx];
+    if (!targetDevice) return;
+
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: targetDevice.deviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      streamRef.current = newStream;
+      setPrimaryDeviceIdx(nextIdx);
+      trackerRef.current.reset();
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream;
+        videoRef.current.play().catch(() => {});
+      }
+    } catch (err) {
+      alert(
+        `Gagal mengganti kamera CAM-01: ${
+          err instanceof Error ? err.message : "Perangkat sedang dipakai"
+        }`
+      );
+    }
+  };
+
   // Hubungkan slot sekunder ke USB webcam tertentu
   const connectSlotToUsb = async (slotId: string, deviceId: string) => {
     try {
@@ -200,10 +245,19 @@ export default function CameraPage() {
         audio: false,
       });
       usbStreamsRef.current[slotId] = newStream;
-      setSecondarySlots((prev) => ({
-        ...prev,
-        [slotId]: { mode: "usb", deviceId },
-      }));
+      usbTrackersRef.current[slotId] = new ObjectTracker({
+        iouThreshold: 0.25,
+        maxMissedFrames: 25,
+        maxCentroidDistance: 150,
+      });
+      setSecondarySlots((prev) => {
+        const next: Record<string, SecondarySlotConfig> = {
+          ...prev,
+          [slotId]: { mode: "usb", deviceId },
+        };
+        secondarySlotsRef.current = next;
+        return next;
+      });
       setEditingSlot(null);
 
       setTimeout(() => {
@@ -228,13 +282,17 @@ export default function CameraPage() {
     if (!trimmed) return;
     const isVideoFileOrHls =
       trimmed.endsWith(".m3u8") || trimmed.endsWith(".mp4") || trimmed.endsWith(".webm");
-    setSecondarySlots((prev) => ({
-      ...prev,
-      [slotId]: {
-        mode: isVideoFileOrHls ? "ip_video" : "ip_mjpeg",
-        streamUrl: trimmed,
-      },
-    }));
+    setSecondarySlots((prev) => {
+      const next: Record<string, SecondarySlotConfig> = {
+        ...prev,
+        [slotId]: {
+          mode: isVideoFileOrHls ? "ip_video" : "ip_mjpeg",
+          streamUrl: trimmed,
+        },
+      };
+      secondarySlotsRef.current = next;
+      return next;
+    });
     setEditingSlot(null);
   };
 
@@ -243,17 +301,28 @@ export default function CameraPage() {
     const oldStream = usbStreamsRef.current[slotId];
     oldStream?.getTracks().forEach((t) => t.stop());
     delete usbStreamsRef.current[slotId];
-    setSecondarySlots((prev) => ({
-      ...prev,
-      [slotId]: { mode: "standby" },
-    }));
+    delete usbTrackersRef.current[slotId];
+    setSecondarySlots((prev) => {
+      const next: Record<string, SecondarySlotConfig> = {
+        ...prev,
+        [slotId]: { mode: "standby" },
+      };
+      secondarySlotsRef.current = next;
+      return next;
+    });
     setEditingSlot(null);
   };
 
-  // Kirim crop yang sudah di-blur wajahnya ke /api/scan
+  // Kirim crop yang sudah di-blur wajahnya ke /api/scan (mendukung CAM-01 s/d CAM-04)
   const scanPerson = useCallback(
-    async (trackId: number, box: TrackedPerson["box"], faces: BoundingBox[]) => {
-      const video = videoRef.current;
+    async (
+      trackId: number,
+      box: TrackedPerson["box"],
+      faces: BoundingBox[],
+      sourceVideo?: HTMLVideoElement | null,
+      channelId: string = "CAM-01"
+    ) => {
+      const video = sourceVideo ?? videoRef.current;
       if (!video || activeScanRef.current.has(trackId)) return;
 
       activeScanRef.current.add(trackId);
@@ -321,6 +390,7 @@ export default function CameraPage() {
           });
 
           const proofItem: ScanProofItem = {
+            channelId,
             trackId,
             timestamp: nowTime,
             status: data.status,
@@ -348,11 +418,11 @@ export default function CameraPage() {
     []
   );
 
-  // Tombol paksa Scan Ulang Sekarang
+  // Tombol paksa Scan Ulang Sekarang (memindai ulang semua kamera aktif)
   const triggerManualRescan = useCallback(() => {
+    lastScanTimeRef.current.clear();
     for (const person of latestTracksRef.current) {
-      lastScanTimeRef.current.delete(person.id);
-      void scanPerson(person.id, person.box, latestFacesRef.current);
+      void scanPerson(person.id, person.box, latestFacesRef.current, videoRef.current, "CAM-01");
     }
   }, [scanPerson]);
 
@@ -561,129 +631,216 @@ export default function CameraPage() {
     []
   );
 
-  // Loop deteksi real-time (ObjectDetector + FaceDetector + Auto Re-Scan 5s)
+  // Loop deteksi real-time (ObjectDetector + FaceDetector + Auto Re-Scan 5s pada semua kamera USB aktif)
   useEffect(() => {
     let active = true;
+
+    const nextMpTs = (baseTs: number): number => {
+      const candidate = Math.floor(baseTs);
+      const next = candidate > lastMpTimestampRef.current ? candidate : lastMpTimestampRef.current + 1;
+      lastMpTimestampRef.current = next;
+      return next;
+    };
+
+    const processVideoElement = (
+      channelId: string,
+      video: HTMLVideoElement,
+      canvas: HTMLCanvasElement,
+      tracker: ObjectTracker,
+      idOffset: number,
+      shouldTriggerApiScan: boolean,
+      baseTimestamp: number
+    ): { persons: number; faces: number } => {
+      const detector = detectorRef.current;
+      const faceDetector = faceDetectorRef.current;
+      if (
+        !detector ||
+        video.readyState < 2 ||
+        video.videoWidth <= 0 ||
+        video.videoHeight <= 0
+      ) {
+        return { persons: 0, faces: 0 };
+      }
+
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return { persons: 0, faces: 0 };
+
+      try {
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+
+        // A. Deteksi Wajah (FaceDetector)
+        const faceBoxes: BoundingBox[] = [];
+        if (faceDetector) {
+          const faceResult = faceDetector.detectForVideo(video, nextMpTs(baseTimestamp));
+          for (const f of faceResult.detections || []) {
+            if (f.boundingBox) {
+              const b = f.boundingBox;
+              faceBoxes.push({
+                originX: Math.max(0, b.originX),
+                originY: Math.max(0, b.originY),
+                width: Math.min(b.width, vw - b.originX),
+                height: Math.min(b.height, vh - b.originY),
+              });
+            }
+          }
+        }
+
+        // B. Deteksi Orang (ObjectDetector)
+        const detectionResult = detector.detectForVideo(video, nextMpTs(baseTimestamp));
+        const personBoxes: BoundingBox[] = (detectionResult.detections || [])
+          .filter((det: Detection) =>
+            det.categories.some(
+              (cat) =>
+                cat.categoryName.toLowerCase() === "person" && (cat.score ?? 0) >= 0.4
+            )
+          )
+          .map((det: Detection) => {
+            const b = det.boundingBox!;
+            return {
+              originX: Math.max(0, b.originX),
+              originY: Math.max(0, b.originY),
+              width: Math.min(b.width, vw - b.originX),
+              height: Math.min(b.height, vh - b.originY),
+            };
+          });
+
+        // C. Fallback Pintar untuk Webcam Close-up
+        for (const face of faceBoxes) {
+          const faceCenterX = face.originX + face.width / 2;
+          const faceCenterY = face.originY + face.height / 2;
+          const alreadyCovered = personBoxes.some(
+            (p) =>
+              faceCenterX >= p.originX - 30 &&
+              faceCenterX <= p.originX + p.width + 30 &&
+              faceCenterY >= p.originY - 30 &&
+              faceCenterY <= p.originY + p.height
+          );
+
+          if (!alreadyCovered) {
+            const synthW = Math.min(vw, Math.round(face.width * 3.0));
+            const synthX = Math.max(
+              0,
+              Math.min(vw - synthW, Math.round(faceCenterX - synthW / 2))
+            );
+            const synthY = Math.max(0, Math.round(face.originY - face.height * 0.25));
+            const synthH = Math.max(face.height * 2, vh - synthY);
+            personBoxes.push({
+              originX: synthX,
+              originY: synthY,
+              width: synthW,
+              height: synthH,
+            });
+          }
+        }
+
+        const rawTracks = tracker.update(personBoxes);
+        const activeTracks: TrackedPerson[] = rawTracks.map((t) => ({
+          ...t,
+          id: t.id + idOffset,
+        }));
+
+        if (channelId === "CAM-01") {
+          latestFacesRef.current = faceBoxes;
+          latestTracksRef.current = activeTracks;
+        }
+
+        // D. Auto Re-Scan setiap 5 detik
+        if (shouldTriggerApiScan) {
+          const nowMs = Date.now();
+          for (const person of activeTracks) {
+            const id = person.id;
+            const count = (stableFrameCountRef.current.get(id) ?? 0) + 1;
+            stableFrameCountRef.current.set(id, count);
+
+            if (count >= STABLE_FRAMES_REQUIRED && !activeScanRef.current.has(id)) {
+              const lastScan = lastScanTimeRef.current.get(id) ?? 0;
+              if (nowMs - lastScan >= RESCAN_INTERVAL_MS) {
+                void scanPerson(id, person.box, faceBoxes, video, channelId);
+              }
+            }
+          }
+        }
+
+        drawOverlay(ctx, video, activeTracks, faceBoxes, canvas.width, canvas.height);
+        return { persons: activeTracks.length, faces: faceBoxes.length };
+      } catch (detError) {
+        console.error(`Gagal deteksi frame pada ${channelId}:`, detError);
+        return { persons: 0, faces: 0 };
+      }
+    };
 
     const renderLoop = (timestamp: number) => {
       if (!active) return;
 
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const detector = detectorRef.current;
-      const faceDetector = faceDetectorRef.current;
+      let totalPersons = 0;
+      let totalFaces = 0;
 
-      if (
-        video &&
-        canvas &&
-        detector &&
-        video.readyState >= 2 &&
-        video.videoWidth > 0 &&
-        video.videoHeight > 0
-      ) {
-        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-        }
+      // 1. Proses CAM-01 Utama
+      if (videoRef.current && canvasRef.current) {
+        const res = processVideoElement(
+          "CAM-01",
+          videoRef.current,
+          canvasRef.current,
+          trackerRef.current,
+          0,
+          true,
+          timestamp
+        );
+        totalPersons += res.persons;
+        totalFaces += res.faces;
+      }
 
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          try {
-            const vw = video.videoWidth;
-            const vh = video.videoHeight;
+      // 2. Proses CAM-02, CAM-03, CAM-04 jika terhubung ke USB Webcam
+      const seenDeviceOffsets = new Map<string, number>();
+      const secondaryChannelOffsets: Record<string, number> = {
+        "CAM-02": 200,
+        "CAM-03": 300,
+        "CAM-04": 400,
+      };
 
-            // A. Deteksi Wajah (FaceDetector)
-            const faceBoxes: BoundingBox[] = [];
-            if (faceDetector) {
-              const faceResult = faceDetector.detectForVideo(video, timestamp);
-              for (const f of faceResult.detections || []) {
-                if (f.boundingBox) {
-                  const b = f.boundingBox;
-                  faceBoxes.push({
-                    originX: Math.max(0, b.originX),
-                    originY: Math.max(0, b.originY),
-                    width: Math.min(b.width, vw - b.originX),
-                    height: Math.min(b.height, vh - b.originY),
-                  });
-                }
-              }
-            }
-            latestFacesRef.current = faceBoxes;
-            setFaceCount(faceBoxes.length);
+      for (const chId of ["CAM-02", "CAM-03", "CAM-04"]) {
+        const slotCfg = secondarySlotsRef.current[chId];
+        const usbVideo = usbVideoRefs.current[chId];
+        const usbCanvas = usbCanvasRefs.current[chId];
+        if (slotCfg?.mode === "usb" && usbVideo && usbCanvas) {
+          if (!usbTrackersRef.current[chId]) {
+            usbTrackersRef.current[chId] = new ObjectTracker({
+              iouThreshold: 0.25,
+              maxMissedFrames: 25,
+              maxCentroidDistance: 150,
+            });
+          }
+          const devKey = slotCfg.deviceId || chId;
+          const isFirstForDevice = !seenDeviceOffsets.has(devKey);
+          const offset = seenDeviceOffsets.get(devKey) ?? secondaryChannelOffsets[chId] ?? 200;
+          if (isFirstForDevice) {
+            seenDeviceOffsets.set(devKey, offset);
+          }
 
-            // B. Deteksi Orang (ObjectDetector)
-            const detectionResult = detector.detectForVideo(video, timestamp);
-            const personBoxes: BoundingBox[] = (detectionResult.detections || [])
-              .filter((det: Detection) =>
-                det.categories.some(
-                  (cat) =>
-                    cat.categoryName.toLowerCase() === "person" && (cat.score ?? 0) >= 0.4
-                )
-              )
-              .map((det: Detection) => {
-                const b = det.boundingBox!;
-                return {
-                  originX: Math.max(0, b.originX),
-                  originY: Math.max(0, b.originY),
-                  width: Math.min(b.width, vw - b.originX),
-                  height: Math.min(b.height, vh - b.originY),
-                };
-              });
-
-            // C. Fallback Pintar untuk Webcam Close-up
-            for (const face of faceBoxes) {
-              const faceCenterX = face.originX + face.width / 2;
-              const faceCenterY = face.originY + face.height / 2;
-              const alreadyCovered = personBoxes.some(
-                (p) =>
-                  faceCenterX >= p.originX - 30 &&
-                  faceCenterX <= p.originX + p.width + 30 &&
-                  faceCenterY >= p.originY - 30 &&
-                  faceCenterY <= p.originY + p.height
-              );
-
-              if (!alreadyCovered) {
-                const synthW = Math.min(vw, Math.round(face.width * 3.0));
-                const synthX = Math.max(
-                  0,
-                  Math.min(vw - synthW, Math.round(faceCenterX - synthW / 2))
-                );
-                const synthY = Math.max(0, Math.round(face.originY - face.height * 0.25));
-                const synthH = Math.max(face.height * 2, vh - synthY);
-                personBoxes.push({
-                  originX: synthX,
-                  originY: synthY,
-                  width: synthW,
-                  height: synthH,
-                });
-              }
-            }
-
-            const activeTracks = trackerRef.current.update(personBoxes);
-            latestTracksRef.current = activeTracks;
-
-            // D. Auto Re-Scan setiap 5 detik
-            const nowMs = Date.now();
-            for (const person of activeTracks) {
-              const id = person.id;
-              const count = (stableFrameCountRef.current.get(id) ?? 0) + 1;
-              stableFrameCountRef.current.set(id, count);
-
-              if (count >= STABLE_FRAMES_REQUIRED && !activeScanRef.current.has(id)) {
-                const lastScan = lastScanTimeRef.current.get(id) ?? 0;
-                if (nowMs - lastScan >= RESCAN_INTERVAL_MS) {
-                  void scanPerson(id, person.box, faceBoxes);
-                }
-              }
-            }
-
-            drawOverlay(ctx, video, activeTracks, faceBoxes, canvas.width, canvas.height);
-            setPersonCount(activeTracks.length);
-          } catch (detError) {
-            console.error("Gagal deteksi frame:", detError);
+          const res = processVideoElement(
+            chId,
+            usbVideo,
+            usbCanvas,
+            usbTrackersRef.current[chId],
+            offset,
+            isFirstForDevice,
+            timestamp
+          );
+          if (isFirstForDevice) {
+            totalPersons += res.persons;
+            totalFaces += res.faces;
           }
         }
       }
+
+      setPersonCount(totalPersons);
+      setFaceCount(totalFaces);
 
       frameCountRef.current++;
       if (timestamp - fpsTimerRef.current >= 1000) {
@@ -824,15 +981,27 @@ export default function CameraPage() {
                   <span className="font-bold text-zinc-950">CAM-01 · CANDI BENTAR UTAMA</span>
                   <span className="hidden sm:inline text-emerald-700 font-semibold">[LIVE AI]</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveChannel(activeChannel === "CAM-01" ? null : "CAM-01")
-                  }
-                  className="text-[10px] uppercase border border-zinc-300 px-1.5 py-0.5 bg-white hover:bg-zinc-950 hover:text-white transition-colors"
-                >
-                  {activeChannel === "CAM-01" ? "⊡ Kembali 2x2" : "⛶ Perbesar"}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {videoDevices.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={switchPrimaryCamera}
+                      className="text-[10px] uppercase border border-zinc-900 px-1.5 py-0.5 bg-zinc-50 hover:bg-zinc-950 hover:text-white transition-colors"
+                      title="Ganti sumber webcam utama pada CAM-01"
+                    >
+                      ⇄ Ganti Kamera
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveChannel(activeChannel === "CAM-01" ? null : "CAM-01")
+                    }
+                    className="text-[10px] uppercase border border-zinc-300 px-1.5 py-0.5 bg-white hover:bg-zinc-950 hover:text-white transition-colors"
+                  >
+                    {activeChannel === "CAM-01" ? "⊡ Kembali 2x2" : "⛶ Perbesar"}
+                  </button>
+                </div>
               </div>
 
               {/* Loading Indicator */}
@@ -1012,14 +1181,22 @@ export default function CameraPage() {
                         </button>
                       </div>
                     ) : slot.mode === "usb" ? (
-                      <video
-                        ref={(el) => {
-                          usbVideoRefs.current[ch.id] = el;
-                        }}
-                        playsInline
-                        muted
-                        className="w-full h-full object-contain"
-                      />
+                      <div className="relative w-full h-full flex items-center justify-center">
+                        <video
+                          ref={(el) => {
+                            usbVideoRefs.current[ch.id] = el;
+                          }}
+                          playsInline
+                          muted
+                          className="w-full h-full object-contain"
+                        />
+                        <canvas
+                          ref={(el) => {
+                            usbCanvasRefs.current[ch.id] = el;
+                          }}
+                          className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                        />
+                      </div>
                     ) : slot.mode === "ip_mjpeg" ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
@@ -1105,7 +1282,7 @@ export default function CameraPage() {
                     className="w-full h-auto object-contain max-h-44 mx-auto"
                   />
                   <div className="bg-zinc-950 text-white font-mono text-[9px] text-center py-0.5 uppercase">
-                    Track #{latestProof.trackId} · {latestProof.timestamp}
+                    {latestProof.channelId} · Track #{latestProof.trackId} · {latestProof.timestamp}
                   </div>
                 </div>
 
@@ -1142,12 +1319,16 @@ export default function CameraPage() {
                         <span>Baju Atasan/Bahu:</span>
                         <span
                           className={
-                            latestProof.attributes.upper_body.shoulders_covered
+                            latestProof.attributes.upper_body.confidence < 0.6
+                              ? "text-amber-700 font-semibold"
+                              : latestProof.attributes.upper_body.shoulders_covered
                               ? "text-emerald-700 font-semibold"
                               : "text-red-600 font-semibold"
                           }
                         >
-                          {latestProof.attributes.upper_body.shoulders_covered
+                          {latestProof.attributes.upper_body.confidence < 0.6
+                            ? "Belum Jelas (Cek Cahaya)"
+                            : latestProof.attributes.upper_body.shoulders_covered
                             ? "Tertutup ✓"
                             : "Terbuka / Tanpa Baju ✗"}
                         </span>
@@ -1205,7 +1386,7 @@ export default function CameraPage() {
                   >
                     <div>
                       <div className="font-mono text-[11px] text-zinc-500">
-                        [{item.timestamp}] Track #{item.trackId} · Conf{" "}
+                        [{item.timestamp}] {item.channelId} · Track #{item.trackId} · Conf{" "}
                         {Math.round(item.confidence * 100)}%
                       </div>
                       <div className="text-zinc-900 font-medium">

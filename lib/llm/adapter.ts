@@ -15,7 +15,7 @@ import { LLMOutputSchema, type LLMOutput } from "./schema";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
 
 // Timeout request LLM (ms)
-const LLM_TIMEOUT_MS = 8000;
+const LLM_TIMEOUT_MS = 9000;
 
 // ──────────────────────────────────────────────
 // Mock Provider — deterministik untuk uji tanpa API key
@@ -82,9 +82,10 @@ async function geminiAnalyze(imageBase64: string): Promise<LLMOutput> {
 
   // Gunakan model tercepat yang didukung API key sebagai prioritas utama
   const candidateModels = [
-    process.env.GEMINI_MODEL || "gemini-3.1-flash-lite",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
+    process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
   ];
 
   let lastError: unknown = null;
@@ -105,7 +106,7 @@ async function geminiAnalyze(imageBase64: string): Promise<LLMOutput> {
             },
           },
         ]),
-        4500
+        3800
       );
 
       const text = result.response.text();
