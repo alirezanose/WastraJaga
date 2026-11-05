@@ -123,7 +123,8 @@ Seluruh fitur berikut **sudah berfungsi penuh dan dapat diuji langsung oleh Dewa
 ## 10. Submission Links
 - **Nama Tim:** Drogon (Ahmad Ali Reza, Muhammad Saifuddin Zuhri, Muhammad Sofyan)
 - **Deployment URL (Live MVP):** `https://wastrajaga.ahmadalireza.site`
-- **GitHub Repository:** *(Isi URL GitHub Anda saat submit)*
+- **GitHub Repository:** `https://github.com/alirezanose/WastraJaga`
+- **Release Tag Submission:** `v1.0-submission`
 - **Demo Account (Khusus Pengujian Juri di Formulir Panitia):**
   - **Akun Pecalang (`/dashboard`):** *(Sertakan email & password pecalang di form panitia)*
   - **Akun Administrator (`/admin`):** *(Sertakan email & password admin di form panitia)*
